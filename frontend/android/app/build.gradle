@@ -25,8 +25,7 @@ android {
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             def versionName = variant.versionName
-            def buildType = variant.buildType.name
-            def newApkName = "Eaqari-v${versionName}-${buildType}.apk"
+            def newApkName = "Eaqari-v${versionName}.apk"
             outputFileName = newApkName
         }
     }
