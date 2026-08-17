@@ -1,0 +1,244 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id               Int       @id @default(autoincrement())
+  full_name        String
+  email            String    @unique
+  phone            String    @unique
+  password_hash    String
+  role             Role      @relation(fields: [role_id], references: [id])
+  role_id          Int
+  governorate      String?
+  city             String?
+  address          String?
+  is_verified      Boolean   @default(false)
+  status           String    @default("active") // active, suspended, deleted
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  properties       Property[]
+  favorites        Favorite[]
+  messagesSent     Message[]
+  transactionsAsOwner  Transaction[] @relation("OwnerTransactions")
+  transactionsAsBuyer  Transaction[] @relation("BuyerTransactions")
+  conversationsAsOwner Conversation[] @relation("OwnerConversations")
+  conversationsAsBuyer Conversation[] @relation("BuyerConversations")
+  payments         Payment[]
+  reportsFiled     Report[]  @relation("Reporter")
+  reportsAgainst   Report[]  @relation("ReportedUser")
+  verificationReqs VerificationRequest[]
+  adminLogs        AdminLog[]
+  notifications    Notification[]
+}
+
+model Role {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique // Super Admin, Admin, Moderator, Owner, Buyer
+  users       User[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  role_id       Int
+  permission_id Int
+  role          Role       @relation(fields: [role_id], references: [id])
+  permission    Permission @relation(fields: [permission_id], references: [id])
+
+  @@id([role_id, permission_id])
+}
+
+model Property {
+  id              Int       @id @default(autoincrement())
+  owner_id        Int
+  owner           User      @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+  type            String    // apartment, villa, etc
+  operation_type  String    // sale, rent
+  price           Float
+  area            Float
+  rooms           Int
+  bathrooms       Int
+  floor           Int?
+  total_floors    Int?
+  finishing_type  String?
+  build_year      Int?
+  description     String
+  governorate     String
+  city            String
+  region          String
+  latitude        Float?
+  longitude       Float?
+  status          String    @default("pending") // pending, active, rejected, sold, rented
+  rejection_reason String?  // reason when status is rejected
+  is_featured     Boolean   @default(false)
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  features        PropertyFeature?
+  media           PropertyMedia[]
+  favorites       Favorite[]
+  transactions    Transaction[]
+  conversations   Conversation[]
+  reports         Report[]
+}
+
+model PropertyFeature {
+  id              Int       @id @default(autoincrement())
+  property_id     Int       @unique
+  property        Property  @relation(fields: [property_id], references: [id], onDelete: Cascade)
+  has_elevator    Boolean   @default(false)
+  has_parking     Boolean   @default(false)
+  is_licensed     Boolean   @default(false)
+  meter_type      String?   // 'legal', 'codi'
+  other_features  Json?     // store other dynamic features
+}
+
+model PropertyMedia {
+  id              Int       @id @default(autoincrement())
+  property_id     Int
+  property        Property  @relation(fields: [property_id], references: [id], onDelete: Cascade)
+  media_url       String
+  media_type      String    // image, video
+  is_primary      Boolean   @default(false)
+}
+
+model Favorite {
+  id              Int       @id @default(autoincrement())
+  user_id         Int
+  property_id     Int
+  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  property        Property  @relation(fields: [property_id], references: [id], onDelete: Cascade)
+  
+  @@unique([user_id, property_id])
+}
+
+model Conversation {
+  id              Int       @id @default(autoincrement())
+  property_id     Int
+  property        Property  @relation(fields: [property_id], references: [id], onDelete: Cascade)
+  owner_id        Int
+  owner           User      @relation("OwnerConversations", fields: [owner_id], references: [id], onDelete: Cascade)
+  buyer_id        Int
+  buyer           User      @relation("BuyerConversations", fields: [buyer_id], references: [id], onDelete: Cascade)
+  created_at      DateTime  @default(now())
+
+  messages        Message[]
+}
+
+model Message {
+  id              Int       @id @default(autoincrement())
+  conversation_id Int
+  conversation    Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  sender_id       Int
+  sender          User      @relation(fields: [sender_id], references: [id], onDelete: Cascade)
+  content         String
+  is_read         Boolean   @default(false)
+  created_at      DateTime  @default(now())
+}
+
+model Transaction {
+  id              Int       @id @default(autoincrement())
+  property_id     Int
+  property        Property  @relation(fields: [property_id], references: [id], onDelete: Cascade)
+  owner_id        Int
+  owner           User      @relation("OwnerTransactions", fields: [owner_id], references: [id], onDelete: Cascade)
+  buyer_id        Int
+  buyer           User      @relation("BuyerTransactions", fields: [buyer_id], references: [id], onDelete: Cascade)
+  amount          Float
+  status          String    @default("new_request") // new_request, pending_review, agreed, awaiting_payment, paid, completed, cancelled, rejected
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  commissions     Commission[]
+  payments        Payment[]
+}
+
+model Commission {
+  id              Int       @id @default(autoincrement())
+  transaction_id  Int
+  transaction     Transaction @relation(fields: [transaction_id], references: [id], onDelete: Cascade)
+  commission_type String    // percentage, fixed
+  percentage_value Float?
+  fixed_value     Float?
+  total_commission Float
+  status          String    @default("unpaid") // unpaid, paid
+  created_at      DateTime  @default(now())
+}
+
+model Payment {
+  id              Int       @id @default(autoincrement())
+  transaction_id  Int
+  transaction     Transaction @relation(fields: [transaction_id], references: [id], onDelete: Cascade)
+  user_id         Int
+  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  amount          Float
+  payment_method  String    // credit_card, fawry, wallet
+  gateway_ref     String?
+  status          String    @default("pending") // pending, success, failed
+  created_at      DateTime  @default(now())
+}
+
+model Report {
+  id              Int       @id @default(autoincrement())
+  reporter_id     Int
+  reporter        User      @relation("Reporter", fields: [reporter_id], references: [id], onDelete: Cascade)
+  reported_user_id Int?
+  reported_user   User?     @relation("ReportedUser", fields: [reported_user_id], references: [id], onDelete: Cascade)
+  property_id     Int?
+  property        Property? @relation(fields: [property_id], references: [id], onDelete: Cascade)
+  reason          String
+  status          String    @default("pending") // pending, reviewed, resolved
+  admin_notes     String?
+  created_at      DateTime  @default(now())
+}
+
+model VerificationRequest {
+  id              Int       @id @default(autoincrement())
+  user_id         Int
+  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  document_url    String
+  status          String    @default("pending") // pending, approved, rejected
+  reviewed_by     Int?
+  created_at      DateTime  @default(now())
+}
+
+model AdminLog {
+  id              Int       @id @default(autoincrement())
+  admin_id        Int
+  admin           User      @relation(fields: [admin_id], references: [id], onDelete: Cascade)
+  action          String
+  target_type     String    // User, Property, Transaction, etc
+  target_id       Int?
+  details         String?
+  created_at      DateTime  @default(now())
+}
+
+model Setting {
+  key             String    @id
+  value           String
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  user_id     Int
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  title       String
+  message     String
+  is_read     Boolean  @default(false)
+  created_at  DateTime @default(now())
+}
+
