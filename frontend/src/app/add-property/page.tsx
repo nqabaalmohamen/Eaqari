@@ -156,8 +156,12 @@ export default function AddProperty() {
         region: '',
         features: {
           has_electricity: hasElectricity,
+          electricity_count: hasElectricity ? parseInt(electricityCount) || 1 : 0,
+          electricity_meter_type: hasElectricity ? electricityMeterType : '',
           has_water: hasWater,
+          water_count: hasWater ? parseInt(waterCount) || 1 : 0,
           has_gas: hasGas,
+          gas_count: hasGas ? parseInt(gasCount) || 1 : 0,
           is_licensed: isLicensed,
           kitchens: parseInt(offerKitchens) || 1,
         },

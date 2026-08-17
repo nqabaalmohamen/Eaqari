@@ -3,6 +3,25 @@ import { prisma } from '../utils/prisma';
 
 const router = Router();
 
+function normalizeMeterType(raw: any): string | null {
+  if (!raw) return null;
+  const s = String(raw).toLowerCase().trim();
+  if (s === 'قانوني' || s === 'legal') return 'legal';
+  if (s === 'كودي' || s === 'ممارسة' || s === 'codi') return 'codi';
+  return s || null;
+}
+
+function buildOtherFeatures(features: any): any {
+  if (!features || typeof features !== 'object') return {};
+  const safe: any = {};
+  for (const [k, v] of Object.entries(features)) {
+    if (k === 'has_elevator' || k === 'has_parking' || k === 'is_licensed' || k === 'meter_type') continue;
+    if (v === undefined) continue;
+    safe[k] = v;
+  }
+  return safe;
+}
+
 // Create Property
 router.post('/', async (req: Request, res: Response): Promise<any> => {
   try {
@@ -11,14 +30,15 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
       description, governorate, city, region, features, media
     } = req.body;
 
-    if (!owner_id || !type || !price || !area) {
+    const safeOwnerId = parseInt(owner_id);
+    if (!safeOwnerId || !type || price === undefined || price === null || area === undefined || area === null) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
     const safeMedia = Array.isArray(media) ? media : [];
 
     const data: any = {
-      owner_id,
+      owner_id: safeOwnerId,
       type,
       operation_type: operation_type || 'sale',
       price: parseFloat(price) || 0,
@@ -32,14 +52,14 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
       status: 'pending',
     };
 
-    if (features) {
+    if (features && typeof features === 'object') {
       data.features = {
         create: {
-          has_elevator: features?.has_elevator || false,
-          has_parking: features?.has_parking || false,
-          is_licensed: features?.is_licensed || false,
-          meter_type: features?.meter_type || null,
-          other_features: features,
+          has_elevator: features.has_elevator === true ? true : false,
+          has_parking: features.has_parking === true ? true : false,
+          is_licensed: features.is_licensed === true ? true : false,
+          meter_type: normalizeMeterType(features.meter_type || features.electricity_meter_type),
+          other_features: buildOtherFeatures(features),
         }
       };
     }
@@ -47,9 +67,9 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
     if (safeMedia.length > 0) {
       data.media = {
         create: safeMedia.map((m: any) => ({
-          media_url: m.media_url,
-          media_type: m.media_type || 'image',
-          is_primary: m.is_primary || false
+          media_url: String(m.media_url || ''),
+          media_type: String(m.media_type || 'image'),
+          is_primary: m.is_primary === true ? true : false,
         }))
       };
     }
@@ -228,23 +248,23 @@ router.put('/:id', async (req: Request, res: Response): Promise<any> => {
     });
 
     // Update features if provided
-    if (features) {
+    if (features && typeof features === 'object') {
       await prisma.propertyFeature.upsert({
         where: { property_id: propertyId },
         update: {
-          has_elevator: features.has_elevator !== undefined ? features.has_elevator : false,
-          has_parking: features.has_parking !== undefined ? features.has_parking : false,
-          is_licensed: features.is_licensed || false,
-          meter_type: features.meter_type || null,
-          other_features: features,
+          has_elevator: features.has_elevator === true ? true : false,
+          has_parking: features.has_parking === true ? true : false,
+          is_licensed: features.is_licensed === true ? true : false,
+          meter_type: normalizeMeterType(features.meter_type || features.electricity_meter_type),
+          other_features: buildOtherFeatures(features),
         },
         create: {
           property_id: propertyId,
-          has_elevator: features.has_elevator || false,
-          has_parking: features.has_parking || false,
-          is_licensed: features.is_licensed || false,
-          meter_type: features.meter_type || null,
-          other_features: features,
+          has_elevator: features.has_elevator === true ? true : false,
+          has_parking: features.has_parking === true ? true : false,
+          is_licensed: features.is_licensed === true ? true : false,
+          meter_type: normalizeMeterType(features.meter_type || features.electricity_meter_type),
+          other_features: buildOtherFeatures(features),
         }
       });
     }
@@ -256,9 +276,9 @@ router.put('/:id', async (req: Request, res: Response): Promise<any> => {
       await prisma.propertyMedia.createMany({
         data: safeMedia.map((m: any) => ({
           property_id: propertyId,
-          media_url: m.media_url,
-          media_type: m.media_type || 'image',
-          is_primary: m.is_primary || false
+          media_url: String(m.media_url || ''),
+          media_type: String(m.media_type || 'image'),
+          is_primary: m.is_primary === true ? true : false,
         }))
       });
     }
