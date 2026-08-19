@@ -1,5 +1,7 @@
 'use client';
 
+'use client';
+
 import React from 'react';
 
 interface Props {

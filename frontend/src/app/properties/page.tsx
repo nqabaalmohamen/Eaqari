@@ -1,5 +1,8 @@
 'use client';
 
+import { API_BASE } from '@/utils/api';
+'use client';
+
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { FAYOUM_CENTERS } from '@/utils/fayoumData';
@@ -19,7 +22,7 @@ export default function Properties() {
   useEffect(() => {
     const fetchProperties = async () => {
       try {
-        const res = await fetch('https://eaqari.vercel.app/api/properties');
+        const res = await fetch(`${API_BASE}/api/properties`);
         if (res.ok) {
           const data = await res.json();
           const formatted = data

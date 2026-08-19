@@ -1,5 +1,8 @@
 'use client';
 
+import { API_BASE } from '@/utils/api';
+'use client';
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/utils/auth';
@@ -31,7 +34,7 @@ export default function ChatsPage() {
 
   const loadConversations = async (uid: number) => {
     try {
-      const res = await fetch(`https://eaqari.vercel.app/api/chats/user/${uid}`);
+      const res = await fetch(`${API_BASE}/api/chats/user/${uid}`);
       const data = await res.json();
       setConversations(data.conversations || []);
     } catch (e) {

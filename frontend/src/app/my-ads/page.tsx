@@ -1,5 +1,8 @@
 'use client';
 
+import { API_BASE } from '@/utils/api';
+'use client';
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/utils/auth';
@@ -31,7 +34,7 @@ export default function MyAdsPage() {
       setUserId(user.id);
       const fetchMyAds = async () => {
         try {
-          const res = await fetch(`https://eaqari.vercel.app/api/properties?owner_id=${user.id}`);
+          const res = await fetch(`${API_BASE}/api/properties?owner_id=${user.id}`);
           if (res.ok) {
             const data = await res.json();
             const formatted = data.map((p: any) => ({

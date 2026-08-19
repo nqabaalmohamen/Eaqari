@@ -1,5 +1,8 @@
 'use client';
 
+import { API_BASE } from '@/utils/api';
+'use client';
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -42,7 +45,7 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchMyAds = async (userId: number) => {
       try {
-        const res = await fetch('https://eaqari.vercel.app/api/properties');
+        const res = await fetch(`${API_BASE}/api/properties`);
         if (res.ok) {
           const data = await res.json();
           const userAds = data.filter((p: any) => p.owner_id === userId);
@@ -102,7 +105,7 @@ export default function Dashboard() {
     localStorage.setItem('eaqari_user', JSON.stringify(updatedUser));
     // Also sync to backend
     try {
-      await fetch('https://eaqari.vercel.app/api/users/profile-completion', {
+      await fetch(`${API_BASE}/api/users/profile-completion`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: (user as any).email, full_name: editName, phone: editPhone, governorate: editGovernorate, city: editCity, address: editAddress }),
@@ -363,6 +366,11 @@ export default function Dashboard() {
         >
           <span>🚪</span> تسجيل الخروج
         </button>
+
+        {/* App Version */}
+        <div className="text-center pt-6 pb-2">
+          <span className="text-xs font-bold text-gray-400">Eaqari v2</span>
+        </div>
       </div>
 
       <style jsx>{`

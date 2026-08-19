@@ -1,5 +1,8 @@
 'use client';
 
+import { API_BASE } from '@/utils/api';
+'use client';
+
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -38,7 +41,7 @@ export default function Favorites() {
 
     const fetchFavorites = async () => {
       try {
-        const res = await fetch('https://eaqari.vercel.app/api/properties');
+        const res = await fetch(`${API_BASE}/api/properties`);
         if (res.ok) {
           const allProps = await res.json();
           const favPropsData: FavProperty[] = allProps

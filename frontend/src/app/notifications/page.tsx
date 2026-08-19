@@ -1,5 +1,8 @@
 'use client';
 
+import { API_BASE } from '@/utils/api';
+'use client';
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/utils/auth';
@@ -20,7 +23,7 @@ export default function NotificationsPage() {
 
   const fetchNotifications = async (userId: number) => {
     try {
-      const res = await fetch(`https://eaqari.vercel.app/api/notifications/user/${userId}`);
+      const res = await fetch(`${API_BASE}/api/notifications/user/${userId}`);
       const data = await res.json();
       setNotifications(data.notifications || []);
     } catch (e) {

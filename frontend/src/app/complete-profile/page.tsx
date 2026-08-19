@@ -1,3 +1,6 @@
+'use client';
+
+import { API_BASE } from '@/utils/api';
 "use client";
 
 import { useState, useEffect } from "react";
@@ -41,7 +44,7 @@ export default function CompleteProfilePage() {
     setError("");
     
     try {
-      const res = await fetch("https://eaqari.vercel.app/api/users/profile-completion", {
+      const res = await fetch(`${API_BASE}/api/users/profile-completion`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

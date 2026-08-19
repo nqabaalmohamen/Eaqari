@@ -1,5 +1,7 @@
 'use client';
 
+'use client';
+
 import { useState, useEffect, useMemo, ReactNode } from 'react';
 import SplashScreen from './SplashScreen';
 import AppHeader from './AppHeader';

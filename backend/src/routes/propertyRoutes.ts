@@ -3,74 +3,103 @@ import { prisma } from '../utils/prisma';
 
 const router = Router();
 
+function safeBool(v: any): boolean {
+  return v === true || v === 'true' || v === 1 || v === '1';
+}
+
+function safeInt(v: any, fallback = 0): number {
+  const n = parseInt(v);
+  return isNaN(n) ? fallback : n;
+}
+
+function safeFloat(v: any, fallback = 0): number {
+  const n = parseFloat(v);
+  return isNaN(n) ? fallback : n;
+}
+
+function safeStr(v: any, fallback = ''): string {
+  if (v === null || v === undefined) return fallback;
+  return String(v);
+}
+
 function normalizeMeterType(raw: any): string | null {
   if (!raw) return null;
   const s = String(raw).toLowerCase().trim();
   if (s === 'قانوني' || s === 'legal') return 'legal';
   if (s === 'كودي' || s === 'ممارسة' || s === 'codi') return 'codi';
-  return s || null;
+  if (s.length === 0) return null;
+  return s;
 }
 
-function buildOtherFeatures(features: any): any {
-  if (!features || typeof features !== 'object') return {};
+function buildOtherFeatures(features: any): any | null {
+  if (!features || typeof features !== 'object') return null;
   const safe: any = {};
   for (const [k, v] of Object.entries(features)) {
     if (k === 'has_elevator' || k === 'has_parking' || k === 'is_licensed' || k === 'meter_type') continue;
     if (v === undefined) continue;
     safe[k] = v;
   }
+  if (Object.keys(safe).length === 0) return null;
   return safe;
+}
+
+function buildFeaturesCreate(features: any): any {
+  const raw = (features && typeof features === 'object') ? features : {};
+  const payload: any = {
+    has_elevator: safeBool(raw.has_elevator),
+    has_parking: safeBool(raw.has_parking),
+    is_licensed: safeBool(raw.is_licensed),
+    meter_type: normalizeMeterType(raw.meter_type || raw.electricity_meter_type),
+  };
+  const extras = buildOtherFeatures(raw);
+  if (extras !== null) payload.other_features = extras;
+  return payload;
 }
 
 // Create Property
 router.post('/', async (req: Request, res: Response): Promise<any> => {
   try {
-    const {
-      owner_id, type, operation_type, price, area, rooms, bathrooms,
-      description, governorate, city, region, features, media
-    } = req.body;
+    const raw = req.body || {};
+    const owner_id = safeInt(raw.owner_id, NaN);
 
-    const safeOwnerId = parseInt(owner_id);
-    if (!safeOwnerId || !type || price === undefined || price === null || area === undefined || area === null) {
-      return res.status(400).json({ message: 'Missing required fields' });
+    if (isNaN(owner_id) || owner_id <= 0) {
+      return res.status(400).json({ message: 'owner_id مطلوب وغير صالح' });
+    }
+    const type = safeStr(raw.type);
+    if (!type) {
+      return res.status(400).json({ message: 'نوع العقار مطلوب (type)' });
+    }
+    if (raw.price === undefined || raw.price === null || raw.area === undefined || raw.area === null) {
+      return res.status(400).json({ message: 'السعر والمساحة مطلوبين' });
     }
 
-    const safeMedia = Array.isArray(media) ? media : [];
+    const safeMedia = Array.isArray(raw.media) ? raw.media : [];
 
     const data: any = {
-      owner_id: safeOwnerId,
+      owner_id,
       type,
-      operation_type: operation_type || 'sale',
-      price: parseFloat(price) || 0,
-      area: parseFloat(area) || 0,
-      rooms: parseInt(rooms) || 0,
-      bathrooms: parseInt(bathrooms) || 0,
-      description: description || '',
-      governorate: governorate || '',
-      city: city || '',
-      region: region || '',
+      operation_type: safeStr(raw.operation_type, 'sale'),
+      price: safeFloat(raw.price),
+      area: safeFloat(raw.area),
+      rooms: safeInt(raw.rooms),
+      bathrooms: safeInt(raw.bathrooms),
+      description: safeStr(raw.description),
+      governorate: safeStr(raw.governorate),
+      city: safeStr(raw.city),
+      region: safeStr(raw.region),
       status: 'pending',
+      features: {
+        create: buildFeaturesCreate(raw.features),
+      },
     };
-
-    if (features && typeof features === 'object') {
-      data.features = {
-        create: {
-          has_elevator: features.has_elevator === true ? true : false,
-          has_parking: features.has_parking === true ? true : false,
-          is_licensed: features.is_licensed === true ? true : false,
-          meter_type: normalizeMeterType(features.meter_type || features.electricity_meter_type),
-          other_features: buildOtherFeatures(features),
-        }
-      };
-    }
 
     if (safeMedia.length > 0) {
       data.media = {
         create: safeMedia.map((m: any) => ({
-          media_url: String(m.media_url || ''),
-          media_type: String(m.media_type || 'image'),
-          is_primary: m.is_primary === true ? true : false,
-        }))
+          media_url: safeStr(m?.media_url),
+          media_type: safeStr(m?.media_type, 'image'),
+          is_primary: safeBool(m?.is_primary),
+        })),
       };
     }
 
@@ -79,14 +108,14 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
       include: {
         media: true,
         features: true,
-        owner: { select: { id: true, full_name: true, phone: true } }
-      }
+        owner: { select: { id: true, full_name: true, phone: true } },
+      },
     });
 
     return res.status(201).json({ message: 'تم إضافة العقار بنجاح', property: newProperty });
   } catch (error: any) {
     console.error('Create property error:', error);
-    res.status(500).json({ message: 'Server Error', error: error.message });
+    res.status(500).json({ message: 'Server Error', error: error?.message || String(error) });
   }
 });
 
@@ -221,72 +250,58 @@ router.put('/:id/status', async (req: Request, res: Response): Promise<any> => {
 // Update Property (PUT - full update by owner)
 router.put('/:id', async (req: Request, res: Response): Promise<any> => {
   try {
-    const propertyId = parseInt(req.params.id as string);
+    const propertyId = safeInt(req.params.id, NaN);
     if (isNaN(propertyId)) return res.status(400).json({ message: 'Invalid ID' });
 
+    const raw = req.body || {};
     const {
       type, operation_type, price, area, rooms, bathrooms,
       description, governorate, city, region, features, media
-    } = req.body;
+    } = raw;
 
-    // Update property fields with safe values
     const data: any = {};
-    if (type !== undefined) data.type = type;
-    if (operation_type !== undefined) data.operation_type = operation_type;
-    if (price !== undefined) data.price = parseFloat(price) || 0;
-    if (area !== undefined) data.area = parseFloat(area) || 0;
-    if (rooms !== undefined) data.rooms = parseInt(rooms) || 0;
-    if (bathrooms !== undefined) data.bathrooms = parseInt(bathrooms) || 0;
-    if (description !== undefined) data.description = description || '';
-    if (governorate !== undefined) data.governorate = governorate || '';
-    if (city !== undefined) data.city = city || '';
-    if (region !== undefined) data.region = region || '';
+    if (type !== undefined) data.type = safeStr(type);
+    if (operation_type !== undefined) data.operation_type = safeStr(operation_type, 'sale');
+    if (price !== undefined) data.price = safeFloat(price);
+    if (area !== undefined) data.area = safeFloat(area);
+    if (rooms !== undefined) data.rooms = safeInt(rooms);
+    if (bathrooms !== undefined) data.bathrooms = safeInt(bathrooms);
+    if (description !== undefined) data.description = safeStr(description);
+    if (governorate !== undefined) data.governorate = safeStr(governorate);
+    if (city !== undefined) data.city = safeStr(city);
+    if (region !== undefined) data.region = safeStr(region);
 
     const updatedProperty = await prisma.property.update({
       where: { id: propertyId },
-      data
+      data,
     });
 
-    // Update features if provided
-    if (features && typeof features === 'object') {
+    if (features !== undefined) {
+      const fc = buildFeaturesCreate(features);
       await prisma.propertyFeature.upsert({
         where: { property_id: propertyId },
-        update: {
-          has_elevator: features.has_elevator === true ? true : false,
-          has_parking: features.has_parking === true ? true : false,
-          is_licensed: features.is_licensed === true ? true : false,
-          meter_type: normalizeMeterType(features.meter_type || features.electricity_meter_type),
-          other_features: buildOtherFeatures(features),
-        },
-        create: {
-          property_id: propertyId,
-          has_elevator: features.has_elevator === true ? true : false,
-          has_parking: features.has_parking === true ? true : false,
-          is_licensed: features.is_licensed === true ? true : false,
-          meter_type: normalizeMeterType(features.meter_type || features.electricity_meter_type),
-          other_features: buildOtherFeatures(features),
-        }
+        update: fc,
+        create: { property_id: propertyId, ...fc },
       });
     }
 
-    // Replace media if new media provided
     const safeMedia = Array.isArray(media) ? media : [];
     if (safeMedia.length > 0) {
       await prisma.propertyMedia.deleteMany({ where: { property_id: propertyId } });
       await prisma.propertyMedia.createMany({
         data: safeMedia.map((m: any) => ({
           property_id: propertyId,
-          media_url: String(m.media_url || ''),
-          media_type: String(m.media_type || 'image'),
-          is_primary: m.is_primary === true ? true : false,
-        }))
+          media_url: safeStr(m?.media_url),
+          media_type: safeStr(m?.media_type, 'image'),
+          is_primary: safeBool(m?.is_primary),
+        })),
       });
     }
 
     return res.json({ message: 'تم تحديث العقار بنجاح', property: updatedProperty });
   } catch (error: any) {
     console.error('Update property error:', error);
-    res.status(500).json({ message: 'Server Error', error: error.message });
+    res.status(500).json({ message: 'Server Error', error: error?.message || String(error) });
   }
 });
 

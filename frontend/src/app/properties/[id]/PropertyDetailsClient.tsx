@@ -1,5 +1,8 @@
 'use client';
 
+import { API_BASE } from '@/utils/api';
+'use client';
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/utils/auth';
@@ -57,7 +60,7 @@ export default function PropertyDetailsClient({ id }: { id: string }) {
 
     const fetchProperty = async () => {
       try {
-        const res = await fetch(`https://eaqari.vercel.app/api/properties/${propId}`);
+        const res = await fetch(`${API_BASE}/api/properties/${propId}`);
         if (!res.ok) {
           if (res.status === 404) {
             setLoadState('notfound');
@@ -173,7 +176,7 @@ export default function PropertyDetailsClient({ id }: { id: string }) {
       setReportSending(true); setReportError('');
       try {
         const { user } = getSession();
-        await fetch(`https://eaqari.vercel.app/api/properties/${propId}/report`, {
+        await fetch(`${API_BASE}/api/properties/${propId}/report`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reporter_id: user?.id || 1, reason: reportReason })
@@ -193,7 +196,7 @@ export default function PropertyDetailsClient({ id }: { id: string }) {
       const ownerId = property.ownerId || 1;
       if (user.id === ownerId) return;
       try {
-        const res = await fetch('https://eaqari.vercel.app/api/chats/create', {
+        const res = await fetch(`${API_BASE}/api/chats/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ buyer_id: user.id, owner_id: ownerId, property_id: propId })

@@ -1,5 +1,9 @@
 'use client';
 
+'use client';
+
+import { API_BASE } from '@/utils/api';
+
 
 
 import { useState, useEffect } from 'react';
@@ -84,7 +88,7 @@ export default function Login() {
 
     try {
 
-      const res = await fetch('https://eaqari.vercel.app/api/auth/google', {
+      const res = await fetch(`${API_BASE}/api/auth/google`, {
 
         method: 'POST',
 
@@ -172,7 +176,7 @@ export default function Login() {
 
     try {
 
-      const response = await fetch('https://eaqari.vercel.app/api/auth/login', {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
 
         method: 'POST',
 
@@ -428,7 +432,7 @@ export default function Login() {
 
                 try {
 
-                  const res = await fetch('https://eaqari.vercel.app/api/auth/google', {
+                  const res = await fetch(`${API_BASE}/api/auth/google`, {
 
                     method: 'POST',
 

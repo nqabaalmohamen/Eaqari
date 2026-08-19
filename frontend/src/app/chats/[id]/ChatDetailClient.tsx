@@ -1,5 +1,8 @@
 'use client';
 
+import { API_BASE } from '@/utils/api';
+'use client';
+
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/utils/auth';
@@ -64,8 +67,8 @@ export default function ChatDetailClient({ id }: { id: string }) {
     try {
       // Fetch conversation details + messages
       const [convRes, msgRes] = await Promise.all([
-        fetch(`https://eaqari.vercel.app/api/chats/${chatId}`),
-        fetch(`https://eaqari.vercel.app/api/chats/${chatId}/messages`)
+        fetch(`${API_BASE}/api/chats/${chatId}`),
+        fetch(`${API_BASE}/api/chats/${chatId}/messages`)
       ]);
       if (convRes.ok) {
         const convData = await convRes.json();
@@ -103,7 +106,7 @@ export default function ChatDetailClient({ id }: { id: string }) {
       return;
     }
     try {
-      const res = await fetch(`https://eaqari.vercel.app/api/chats/${chatId}/messages`, {
+      const res = await fetch(`${API_BASE}/api/chats/${chatId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sender_id: userId, content })
@@ -124,7 +127,7 @@ export default function ChatDetailClient({ id }: { id: string }) {
     if (!reportReason.trim()) return;
     setReportSending(true);
     try {
-      await fetch(`https://eaqari.vercel.app/api/chats/${chatId}/report`, {
+      await fetch(`${API_BASE}/api/chats/${chatId}/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reporter_id: userId, reason: reportReason })

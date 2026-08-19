@@ -46,12 +46,9 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
-// Only listen locally (not on Vercel)
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(PORT, () => {
-    console.log(`✅ Server is running on port ${PORT}`);
-  });
-}
+app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`✅ Server is running on port ${PORT}`);
+});
 
 export default app;
 
