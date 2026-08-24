@@ -3,8 +3,84 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { API_BASE, getApiBase } from '@/utils/api';
+import { API_BASE, PRODUCTION_URLS } from '@/utils/api';
 import { getSession, clearSession, UserSession } from '@/utils/auth';
+
+function candidateBases(): string[] {
+  const out: string[] = [];
+  if (typeof window !== 'undefined') {
+    try {
+      const cf = window.localStorage.getItem('eaqari_cloudflare_url');
+      if (cf && /^https:\/\/[a-z0-9-]+\.trycloudflare\.com/i.test(cf)) out.push(cf);
+    } catch { /* ignore */ }
+  }
+  for (const u of PRODUCTION_URLS as readonly string[]) {
+    if (!out.includes(u)) out.push(u);
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const ua = (navigator.userAgent || '').toLowerCase();
+      const isAndroid = ua.includes('android') || ua.includes('capacitor');
+      if (!isAndroid) {
+        if (!out.includes('http://localhost:5000')) out.push('http://localhost:5000');
+      }
+    } catch { /* ignore */ }
+  }
+  try {
+    if (typeof window !== 'undefined') {
+      const legacy = window.localStorage.getItem('eaqari_api_base');
+      if (legacy && /^https?:\/\//i.test(legacy) && !out.includes(legacy)) out.push(legacy);
+    }
+  } catch { /* ignore */ }
+  return out;
+}
+
+async function tryCreateAdminChat(user_id: number): Promise<{ ok: boolean; status: number; data?: any; detail?: string; tried: string[] }> {
+  const bases = candidateBases();
+  const tried: string[] = [];
+  let lastStatus = 0;
+  let lastDetail = '';
+  for (const base of bases) {
+    tried.push(base);
+    try {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller!.abort(), 12000) : null;
+      const r = await fetch(`${base}/api/chats/create-admin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+          'Bypass-Tunnel-Reminder': 'true',
+          'loca-skip-warning': 'true',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ user_id }),
+        signal: controller ? controller.signal : undefined,
+      } as any);
+      if (timer) clearTimeout(timer);
+      if (r.ok) {
+        const data = await r.json();
+        try {
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('eaqari_api_base', base);
+            if (/\.trycloudflare\.com/i.test(base)) {
+              window.localStorage.setItem('eaqari_cloudflare_url', base);
+            }
+          }
+        } catch { /* ignore */ }
+        return { ok: true, status: r.status, data, tried };
+      }
+      lastStatus = r.status;
+      try {
+        const ej = await r.json();
+        lastDetail = ej?.error || ej?.message || '';
+      } catch { /* ignore */ }
+    } catch {
+      // فشل شبكي على هذا الرابط — نجرب التالي
+    }
+  }
+  return { ok: false, status: lastStatus || 0, detail: lastDetail, tried };
+}
 
 export default function Dashboard() {
   const router = useRouter();
@@ -35,42 +111,31 @@ export default function Dashboard() {
         showMsg('معرف المستخدم غير صالح', 'err');
         return;
       }
-      const base = await getApiBase();
-      const res = await fetch(`${base}/api/chats/create-admin`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-          'Bypass-Tunnel-Reminder': 'true',
-          'loca-skip-warning': 'true',
-        },
-        body: JSON.stringify({ user_id })
-      });
-      if (!res.ok) {
-        let detail = '';
-        try {
-          const errJson = await res.json();
-          detail = errJson?.error || errJson?.message || '';
-        } catch { /* ignore */ }
-        showMsg(`فشل الاتصال: ${res.status}${detail ? ' - ' + detail : ''}`, 'err');
-        return;
-      }
-      const data = await res.json();
-      if (data.conversation?.id) {
-        showMsg('جاري فتح الدردشة...', 'ok');
-        const path = `/admin-chat/${data.conversation.id}`;
-        try { router.push(path); } catch {}
-        setTimeout(() => {
-          try {
-            if (typeof window !== 'undefined' && window.location.pathname !== path) {
-              window.location.href = path;
-            }
-          } catch {}
-        }, 250);
+      showMsg('جاري الاتصال بالخادم...', 'ok');
+      const res = await tryCreateAdminChat(user_id);
+      if (res.ok) {
+        if (res?.data?.conversation?.id) {
+          showMsg('جاري فتح الدردشة...', 'ok');
+          const path = `/admin-chat/${res.data.conversation.id}`;
+          try { router.push(path); } catch {}
+          setTimeout(() => {
+            try {
+              if (typeof window !== 'undefined' && window.location.pathname !== path) {
+                window.location.href = path;
+              }
+            } catch {}
+          }, 250);
+        } else {
+          console.error('no conversation returned:', res.data);
+          showMsg('تعذر فتح الدردشة', 'err');
+        }
       } else {
-        console.error('no conversation returned:', data);
-        showMsg('تعذر فتح الدردشة', 'err');
+        if (res.status === 0) {
+          showMsg('تعذر الوصول للسيرفر. تأكد من تشغيل start_production أو start_all على جهاز الكمبيوتر.', 'err');
+        } else {
+          showMsg(`فشل الاتصال: ${res.status}${res.detail ? ' - ' + res.detail : ''}`, 'err');
+        }
+        console.warn('[dashboard/openAdminChat] جميع الروابط فشلت:\n  • ' + res.tried.join('\n  • '));
       }
     } catch (e: any) {
       console.error('openAdminChat error:', e);

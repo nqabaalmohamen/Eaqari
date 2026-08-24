@@ -1,9 +1,85 @@
 'use client';
 
-import { API_BASE, getApiBase } from '@/utils/api';
+import { API_BASE, PRODUCTION_URLS } from '@/utils/api';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/utils/auth';
+
+function candidateBases(): string[] {
+  const out: string[] = [];
+  if (typeof window !== 'undefined') {
+    try {
+      const cf = window.localStorage.getItem('eaqari_cloudflare_url');
+      if (cf && /^https:\/\/[a-z0-9-]+\.trycloudflare\.com/i.test(cf)) out.push(cf);
+    } catch { /* ignore */ }
+  }
+  for (const u of PRODUCTION_URLS as readonly string[]) {
+    if (!out.includes(u)) out.push(u);
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const ua = (navigator.userAgent || '').toLowerCase();
+      const isAndroid = ua.includes('android') || ua.includes('capacitor');
+      if (!isAndroid) {
+        if (!out.includes('http://localhost:5000')) out.push('http://localhost:5000');
+      }
+    } catch { /* ignore */ }
+  }
+  try {
+    if (typeof window !== 'undefined') {
+      const legacy = window.localStorage.getItem('eaqari_api_base');
+      if (legacy && /^https?:\/\//i.test(legacy) && !out.includes(legacy)) out.push(legacy);
+    }
+  } catch { /* ignore */ }
+  return out;
+}
+
+async function tryCreateAdminChatLocal(user_id: number): Promise<{ ok: boolean; status: number; data?: any; detail?: string; tried: string[] }> {
+  const bases = candidateBases();
+  const tried: string[] = [];
+  let lastStatus = 0;
+  let lastDetail = '';
+  for (const base of bases) {
+    tried.push(base);
+    try {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller!.abort(), 12000) : null;
+      const r = await fetch(`${base}/api/chats/create-admin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+          'Bypass-Tunnel-Reminder': 'true',
+          'loca-skip-warning': 'true',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ user_id }),
+        signal: controller ? controller.signal : undefined,
+      } as any);
+      if (timer) clearTimeout(timer);
+      if (r.ok) {
+        const data = await r.json();
+        try {
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('eaqari_api_base', base);
+            if (/\.trycloudflare\.com/i.test(base)) {
+              window.localStorage.setItem('eaqari_cloudflare_url', base);
+            }
+          }
+        } catch { /* ignore */ }
+        return { ok: true, status: r.status, data, tried };
+      }
+      lastStatus = r.status;
+      try {
+        const ej = await r.json();
+        lastDetail = ej?.error || ej?.message || '';
+      } catch { /* ignore */ }
+    } catch {
+      // فشل شبكي على هذا الرابط — نجرب التالي
+    }
+  }
+  return { ok: false, status: lastStatus || 0, detail: lastDetail, tried };
+}
 
 interface Property {
   id: number;
@@ -204,22 +280,12 @@ export default function PropertyDetailsClient({ id }: { id: string }) {
     requireAuth(async () => {
       const { user } = getSession();
       if (!user) return;
-      try {
-        const base = await getApiBase();
-        const res = await fetch(`${base}/api/chats/create-admin`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'ngrok-skip-browser-warning': 'true',
-            'Bypass-Tunnel-Reminder': 'true',
-            'loca-skip-warning': 'true',
-          },
-          body: JSON.stringify({ user_id: user.id })
-        });
-        const data = await res.json();
-        router.push(data.conversation?.id ? `/admin-chat/${data.conversation.id}` : '/chats');
-      } catch (e) { router.push('/chats'); }
+      const res = await tryCreateAdminChatLocal(user.id);
+      if (res.ok && res?.data?.conversation?.id) {
+        router.push(`/admin-chat/${res.data.conversation.id}`);
+      } else {
+        router.push('/chats');
+      }
     });
   };
 
