@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/utils/auth';
-import { API_BASE } from '@/utils/api';
+import { API_BASE, getApiBase } from '@/utils/api';
 
 const BOTTOM_NAV_H = 72;
 const BTN_SIZE = 56;
@@ -50,18 +50,25 @@ export default function FloatingAdminChatButton() {
         showMsg('معرف المستخدم غير صالح', 'err');
         return;
       }
-      const r = await fetch(`${API_BASE}/api/chats/create-admin`, {
+      const base = await getApiBase();
+      const r = await fetch(`${base}/api/chats/create-admin`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'ngrok-skip-browser-warning': 'true',
           'Bypass-Tunnel-Reminder': 'true',
+          'loca-skip-warning': 'true',
         },
         body: JSON.stringify({ user_id }),
       });
       if (!r.ok) {
-        showMsg(`فشل الاتصال: ${r.status}`, 'err');
+        let detail = '';
+        try {
+          const errJson = await r.json();
+          detail = errJson?.error || errJson?.message || '';
+        } catch { /* ignore */ }
+        showMsg(`فشل الاتصال: ${r.status}${detail ? ' - ' + detail : ''}`, 'err');
         return;
       }
       const d = await r.json();

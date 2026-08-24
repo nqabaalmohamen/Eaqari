@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { API_BASE } from '@/utils/api';
+import { API_BASE, getApiBase } from '@/utils/api';
 import { getSession, clearSession, UserSession } from '@/utils/auth';
 
 export default function Dashboard() {
@@ -35,18 +35,25 @@ export default function Dashboard() {
         showMsg('معرف المستخدم غير صالح', 'err');
         return;
       }
-      const res = await fetch(`${API_BASE}/api/chats/create-admin`, {
+      const base = await getApiBase();
+      const res = await fetch(`${base}/api/chats/create-admin`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'ngrok-skip-browser-warning': 'true',
           'Bypass-Tunnel-Reminder': 'true',
+          'loca-skip-warning': 'true',
         },
         body: JSON.stringify({ user_id })
       });
       if (!res.ok) {
-        showMsg(`فشل الاتصال: ${res.status}`, 'err');
+        let detail = '';
+        try {
+          const errJson = await res.json();
+          detail = errJson?.error || errJson?.message || '';
+        } catch { /* ignore */ }
+        showMsg(`فشل الاتصال: ${res.status}${detail ? ' - ' + detail : ''}`, 'err');
         return;
       }
       const data = await res.json();

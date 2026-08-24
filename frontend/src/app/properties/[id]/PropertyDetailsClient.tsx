@@ -1,6 +1,6 @@
 'use client';
 
-import { API_BASE } from '@/utils/api';
+import { API_BASE, getApiBase } from '@/utils/api';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/utils/auth';
@@ -205,13 +205,20 @@ export default function PropertyDetailsClient({ id }: { id: string }) {
       const { user } = getSession();
       if (!user) return;
       try {
-        const res = await fetch(`${API_BASE}/api/chats/create-admin`, {
+        const base = await getApiBase();
+        const res = await fetch(`${base}/api/chats/create-admin`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+            'Bypass-Tunnel-Reminder': 'true',
+            'loca-skip-warning': 'true',
+          },
           body: JSON.stringify({ user_id: user.id })
         });
         const data = await res.json();
-        router.push(data.conversation?.id ? `/chats/${data.conversation.id}` : '/chats');
+        router.push(data.conversation?.id ? `/admin-chat/${data.conversation.id}` : '/chats');
       } catch (e) { router.push('/chats'); }
     });
   };

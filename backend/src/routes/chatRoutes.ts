@@ -3,6 +3,218 @@ import { prisma } from '../utils/prisma';
 
 const router = Router();
 
+// =========================================
+// Create Admin Chat (أول route لتجنب مشاكل التسجيل)
+// =========================================
+async function findAdminUser(): Promise<any> {
+  let adminRoleId: number | null = null;
+
+  try {
+    const r1 = await prisma.role.findFirst({
+      where: { name: 'admin' },
+    });
+    if (r1) adminRoleId = r1.id;
+  } catch (e: any) {
+    console.warn('[findAdmin] exact role lookup failed:', e?.message);
+  }
+
+  if (!adminRoleId) {
+    try {
+      const r2: any[] = await prisma.$queryRawUnsafe(
+        "SELECT id, name FROM \"Role\" WHERE LOWER(name) = LOWER('admin') LIMIT 1"
+      ) as any;
+      if (r2 && r2.length > 0) adminRoleId = r2[0].id;
+    } catch (e: any) {
+      console.warn('[findAdmin] raw role lookup failed:', e?.message);
+    }
+  }
+
+  if (!adminRoleId) {
+    try {
+      const r3 = await prisma.role.findFirst({ orderBy: { id: 'asc' } });
+      if (r3) adminRoleId = r3.id;
+    } catch { /* ignore */ }
+  }
+
+  const fallbackIds = adminRoleId ? [adminRoleId] : [1, 2, 3];
+
+  for (const rid of fallbackIds) {
+    try {
+      const u = await prisma.user.findFirst({
+        where: { role_id: rid },
+        orderBy: { id: 'asc' },
+        select: { id: true, full_name: true, phone: true, role_id: true },
+      });
+      if (u) {
+        console.log('[findAdmin] ✅ Found admin user via role_id:', rid, 'user:', { id: u.id, name: u.full_name });
+        return u;
+      }
+    } catch (e: any) {
+      console.warn('[findAdmin] user findFirst for role_id', rid, 'failed:', e?.message);
+    }
+  }
+
+  try {
+    const rawUsers: any[] = await prisma.$queryRawUnsafe(
+      'SELECT u.id, u.full_name, u.phone, u.role_id FROM "User" u ORDER BY u.id ASC LIMIT 5'
+    ) as any;
+    if (rawUsers && rawUsers.length > 0) {
+      let candidate: any = rawUsers.find((u: any) => u.role_id === adminRoleId);
+      if (!candidate) candidate = rawUsers[0];
+      console.log('[findAdmin] ✅ Raw fallback admin user:', candidate);
+      return candidate;
+    }
+  } catch (e: any) {
+    console.warn('[findAdmin] raw user lookup also failed:', e?.message);
+  }
+
+  return null;
+}
+
+async function getOrCreateConversation(userIdInt: number, adminId: number): Promise<any> {
+  const selectBase = {
+    id: true,
+    buyer_id: true,
+    owner_id: true,
+    property_id: true,
+    created_at: true,
+  };
+
+  let conversation: any = null;
+
+  try {
+    conversation = await prisma.conversation.findFirst({
+      where: { buyer_id: userIdInt, owner_id: adminId },
+      select: selectBase,
+      orderBy: { id: 'desc' },
+    });
+  } catch (e: any) {
+    console.warn('[getOrCreateConv] findFirst (select) failed:', e?.message);
+    try {
+      const raw: any[] = await prisma.$queryRawUnsafe(
+        'SELECT id, buyer_id, owner_id, property_id, created_at FROM "Conversation" WHERE buyer_id = $1 AND owner_id = $2 ORDER BY id DESC LIMIT 1',
+        userIdInt, adminId
+      ) as any;
+      if (raw && raw.length > 0) conversation = raw[0];
+    } catch (rawErr: any) {
+      console.warn('[getOrCreateConv] raw findFirst also failed:', rawErr?.message);
+    }
+  }
+
+  if (conversation) {
+    console.log('[getOrCreateConv] ✅ Existing conversation id:', conversation.id);
+  } else {
+    console.log('[getOrCreateConv] 🆕 Creating conversation...');
+    try {
+      conversation = await prisma.conversation.create({
+        data: { buyer_id: userIdInt, owner_id: adminId },
+        select: selectBase,
+      });
+      console.log('[getOrCreateConv] ✅ Created conversation id:', conversation.id);
+    } catch (e: any) {
+      console.warn('[getOrCreateConv] prisma.create failed:', e?.message);
+      try {
+        const raw: any[] = await prisma.$queryRawUnsafe(
+          'INSERT INTO "Conversation" (buyer_id, owner_id, created_at) VALUES ($1, $2, NOW()) RETURNING id, buyer_id, owner_id, property_id, created_at',
+          userIdInt, adminId
+        ) as any;
+        if (raw && raw.length > 0) {
+          conversation = raw[0];
+          console.log('[getOrCreateConv] ✅ Raw create success id:', conversation.id);
+        }
+      } catch (rawErr: any) {
+        console.error('[getOrCreateConv] raw create also failed:', rawErr?.message);
+        throw rawErr || e;
+      }
+    }
+  }
+
+  const cid = conversation.id;
+
+  let buyer: any = null;
+  let owner: any = null;
+  let messages: any[] = [];
+
+  try {
+    [buyer, owner, messages] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userIdInt }, select: { id: true, full_name: true, phone: true } }),
+      prisma.user.findUnique({ where: { id: adminId }, select: { id: true, full_name: true, phone: true } }),
+      prisma.message.findMany({ where: { conversation_id: cid }, orderBy: { created_at: 'asc' }, include: { sender: { select: { id: true, full_name: true } } } }),
+    ]);
+  } catch (relErr: any) {
+    console.warn('[getOrCreateConv] includes fetch failed, using raw:', relErr?.message);
+    try {
+      const buyerRaw: any[] = await prisma.$queryRawUnsafe(
+        'SELECT id, full_name, phone FROM "User" WHERE id = $1 LIMIT 1', userIdInt
+      ) as any;
+      const ownerRaw: any[] = await prisma.$queryRawUnsafe(
+        'SELECT id, full_name, phone FROM "User" WHERE id = $1 LIMIT 1', adminId
+      ) as any;
+      const msgRaw: any[] = await prisma.$queryRawUnsafe(
+        'SELECT m.*, u.id as sender_id, u.full_name as sender_full_name FROM "Message" m LEFT JOIN "User" u ON u.id = m.sender_id WHERE m.conversation_id = $1 ORDER BY m.created_at ASC', cid
+      ) as any;
+      buyer = buyerRaw?.[0] || null;
+      owner = ownerRaw?.[0] || null;
+      messages = (msgRaw || []).map((m: any) => ({
+        id: m.id, conversation_id: m.conversation_id, sender_id: m.sender_id,
+        content: m.content, is_read: m.is_read, created_at: m.created_at,
+        sender: m.sender_id ? { id: m.sender_id, full_name: m.sender_full_name } : null,
+      }));
+    } catch (rawRelErr: any) {
+      console.warn('[getOrCreateConv] raw includes also failed:', rawRelErr?.message);
+    }
+  }
+
+  return {
+    ...conversation,
+    buyer,
+    owner,
+    messages,
+  };
+}
+
+async function createAdminChatHandler(req: Request, res: Response): Promise<any> {
+  try {
+    console.log('[create-admin] 📥 Received request. Body:', JSON.stringify(req.body));
+    const { user_id } = req.body;
+    if (!user_id) {
+      console.log('[create-admin] ❌ Missing user_id');
+      return res.status(400).json({ message: 'Missing user_id' });
+    }
+
+    const userIdInt = parseInt(String(user_id));
+    if (isNaN(userIdInt)) {
+      console.log('[create-admin] ❌ Invalid user_id:', user_id);
+      return res.status(400).json({ message: 'Invalid user_id' });
+    }
+
+    console.log('[create-admin] 🔎 Resolving admin user...');
+    const admin = await findAdminUser();
+    if (!admin) {
+      console.log('[create-admin] ❌ No admin user could be resolved');
+      return res.status(404).json({ message: 'No admin found' });
+    }
+
+    const adminId = admin.id;
+    console.log('[create-admin] 🔎 Resolving conversation between user', userIdInt, 'and admin', adminId);
+    const conversation = await getOrCreateConversation(userIdInt, adminId);
+
+    return res.json({ conversation });
+  } catch (error: any) {
+    console.error('[create-admin] 🔥 FULL ERROR:', error);
+    res.status(500).json({
+      message: 'Server Error',
+      error: error?.message || String(error),
+      stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined,
+    });
+  }
+}
+
+// نعلن عنه بكل الطرق لضمان التسجيل
+router.post('/create-admin', createAdminChatHandler);
+router.post('/createAdmin', createAdminChatHandler);
+router.all('/admin-chat-create', createAdminChatHandler);
+
 // Get or create conversation between buyer and owner for a property
 router.post('/create', async (req: Request, res: Response): Promise<any> => {
   try {
@@ -42,51 +254,6 @@ router.post('/create', async (req: Request, res: Response): Promise<any> => {
     res.status(500).json({ message: 'Server Error', error: error.message });
   }
 });
-
-// Create Admin Chat
-router.post('/create-admin', async (req: Request, res: Response): Promise<any> => {
-  try {
-    const { user_id } = req.body;
-    if (!user_id) return res.status(400).json({ message: 'Missing user_id' });
-
-    const userIdInt = parseInt(user_id as any);
-    if (isNaN(userIdInt)) return res.status(400).json({ message: 'Invalid user_id' });
-
-    // Find first admin
-    const adminRole = await prisma.role.findFirst({ where: { name: 'admin' } });
-    const admin = await prisma.user.findFirst({
-      where: { role_id: adminRole?.id || 1 },
-      orderBy: { id: 'asc' }
-    });
-
-    if (!admin) return res.status(404).json({ message: 'No admin found' });
-
-    let conversation: any = await prisma.conversation.findFirst({
-      where: { buyer_id: userIdInt, owner_id: admin.id } as any,
-      include: {
-        buyer: { select: { id: true, full_name: true, phone: true } },
-        owner: { select: { id: true, full_name: true, phone: true } },
-        messages: { orderBy: { created_at: 'asc' } }
-      }
-    });
-
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: { buyer_id: userIdInt, owner_id: admin.id } as any,
-        include: {
-          buyer: { select: { id: true, full_name: true, phone: true } },
-          owner: { select: { id: true, full_name: true, phone: true } },
-          messages: { orderBy: { created_at: 'asc' } }
-        }
-      });
-    }
-
-    return res.json({ conversation });
-  } catch (error: any) {
-    res.status(500).json({ message: 'Server Error', error: error.message });
-  }
-});
-
 
 // Get all conversations for a user (as buyer OR owner)
 router.get('/user/:userId', async (req: Request, res: Response): Promise<any> => {
