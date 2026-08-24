@@ -1,34 +1,58 @@
 // ============================================
 // ملف الإعداد المركزي لرابط الخادم
-// آلية Fallback ذكية: تختبر الروابط بالترتيب وتستخدم أول رابط صالح
-// يتم إصلاح رابط 404 تلقائياً عبر تبديل الرابط عند الفشل
+// ============================================
+// ملاحظة هامة جداً حسب إعداد المشروع:
+//   - قاعدة البيانات والسيرفر (Backend) يعملان على جهاز المستخدم محلياً
+//   - يتم تشغيل النظام إما عبر start_all.bat (Cloudflare Tunnel)
+//     أو عبر start_production.bat (Ngrok الثابت + LocalTunnel الثابت)
+//   - لا يوجد خادم سحابي (Vercel/Railway) للـ Backend — أي محاولة للاتصال
+//     بهم ستفشل ويجب تجاهلها تماماً.
+// ============================================
+// آلية الذكاء:
+//   1) أولوية أولى: الروابط الثابتة في start_production (Ngrok + LocalTunnel)
+//   2) ثانياً: الرابط المكتشف تلقائياً من start_all (Cloudflare) عبر قراءة
+//      القيمة المخزنة مسبقاً في localStorage من سكريبت update_api_url.js
+//   3) ثالثاً: localhost:5000 للتطوير على نفس الجهاز
+// عند فشل أي رابط (404/502/timeout) يتم محاولة الباقين تلقائياً.
 // ============================================
 
-const CANDIDATES = [
-  // 1. LocalTunnel الثابت (مذكور في start_production.bat)
+const PRODUCTION_FIXED_URLS = [
   'https://eaqari-api-prod-moh.loca.lt',
-  // 2. Ngrok Static Tunnel
   'https://arming-diaper-stonework.ngrok-free.dev',
-  // 3. Vercel (كما يرد في admin/error.tsx)
-  'https://eaqari.vercel.app',
-  // 4. Localhost للتطوير المحلي
-  'http://localhost:5000',
 ];
 
-const LS_KEY = 'eaqari_api_base';
-const TIMEOUT_MS = 4000;
+const LOCAL_DEV = 'http://localhost:5000';
+
+const LEGACY_KEY = 'eaqari_api_base';
+const CLOUDFLARE_KEY = 'eaqari_cloudflare_url';
+const TIMEOUT_MS = 4500;
 
 let cachedBase: string | null = null;
 let resolving: Promise<string> | null = null;
 
-function isAbsUrl(u: string): boolean {
-  return /^https?:\/\//i.test(u);
+function safeGet(k: string): string | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+function safeSet(k: string, v: string): void {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(k, v);
+  } catch {
+    /* ignore */
+  }
 }
 
 function timeout(p: Promise<Response>, ms: number): Promise<Response> {
   return Promise.race([
     p,
-    new Promise<Response>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+    new Promise<Response>((_, rej) =>
+      setTimeout(() => rej(new Error('timeout')), ms)
+    ),
   ]);
 }
 
@@ -40,7 +64,7 @@ async function isHealthy(url: string): Promise<boolean> {
         headers: {
           'ngrok-skip-browser-warning': 'true',
           'Bypass-Tunnel-Reminder': 'true',
-          'Accept': 'application/json',
+          Accept: 'application/json',
         } as any,
       }),
       TIMEOUT_MS
@@ -51,39 +75,53 @@ async function isHealthy(url: string): Promise<boolean> {
   }
 }
 
+// يجمع كل الروابط المرشحة بالترتيب الصحيح (بدون روابط سحابية)
+function collectCandidates(): string[] {
+  const savedLegacy = safeGet(LEGACY_KEY);
+  const savedCf = safeGet(CLOUDFLARE_KEY);
+
+  const list: string[] = [...PRODUCTION_FIXED_URLS];
+
+  if (savedCf && /^https:\/\/[a-z0-9-]+\.trycloudflare\.com/i.test(savedCf)) {
+    if (!list.includes(savedCf)) list.push(savedCf);
+  }
+  if (
+    savedLegacy &&
+    /^https?:\/\//i.test(savedLegacy) &&
+    !list.includes(savedLegacy)
+  ) {
+    list.push(savedLegacy);
+  }
+  list.push(LOCAL_DEV);
+
+  // إزالة التكرارات مع الحفاظ على الترتيب
+  return list.filter((v, i, a) => a.indexOf(v) === i);
+}
+
 async function resolveBase(force = false): Promise<string> {
   if (!force && cachedBase) return cachedBase;
   if (!force && resolving) return resolving;
 
   resolving = (async (): Promise<string> => {
-    try {
-      const saved =
-        typeof window !== 'undefined' ? window.localStorage.getItem(LS_KEY) : null;
-      const ordered =
-        saved && !force
-          ? [saved, ...CANDIDATES.filter((c) => c !== saved)]
-          : [...CANDIDATES];
-
-      for (const url of ordered) {
-        if (await isHealthy(url)) {
-          cachedBase = url;
-          try {
-            window.localStorage.setItem(LS_KEY, url);
-          } catch {
-            /* ignore */
-          }
-          if (typeof console !== 'undefined') {
-            console.info('[api.ts] ✅ Selected API base:', url);
-          }
-          return url;
-        } else if (typeof console !== 'undefined') {
-          console.warn('[api.ts] ⚠️ Unreachable base:', url);
-        }
-      }
-    } catch (e) {
-      console.warn('[api.ts] resolveBase error:', e);
+    const candidates = collectCandidates();
+    if (typeof console !== 'undefined') {
+      console.info('[api.ts] 🧪 Testing candidate URLs (local/tunnel only):', candidates);
     }
-    cachedBase = CANDIDATES[0];
+    for (const url of candidates) {
+      if (await isHealthy(url)) {
+        cachedBase = url;
+        safeSet(LEGACY_KEY, url);
+        if (/\.trycloudflare\.com/i.test(url)) safeSet(CLOUDFLARE_KEY, url);
+        if (typeof console !== 'undefined') {
+          console.info('[api.ts] ✅ Selected API base:', url);
+        }
+        return url;
+      } else if (typeof console !== 'undefined') {
+        console.warn('[api.ts] ⚠️ Unreachable base:', url);
+      }
+    }
+    // إذا فشل الكل، نستخدم أول رابط ثابت كافتراضي حتى يظهر للمستخدم خطأ واضح
+    cachedBase = PRODUCTION_FIXED_URLS[0];
     return cachedBase;
   })();
 
@@ -94,8 +132,10 @@ async function resolveBase(force = false): Promise<string> {
   }
 }
 
+// تبديل رابط معروف في URL بأساس بديل
 function replaceBase(urlStr: string, newBase: string): string {
-  for (const c of CANDIDATES) {
+  const all = collectCandidates();
+  for (const c of all) {
     if (urlStr.startsWith(c + '/') || urlStr === c) {
       return urlStr.replace(c, newBase);
     }
@@ -103,17 +143,23 @@ function replaceBase(urlStr: string, newBase: string): string {
   return urlStr;
 }
 
-// ------- Global fetch patch: headers + auto base swap -------
-if (typeof window !== 'undefined' && !(window as any).__eaqariFetchPatchedV2) {
-  const originalFetch = window.fetch.bind(window);
+// هل هذا الطلب متجه لأحد خوادمنا المحلية/النفقية؟
+function isOurServer(urlStr: string): boolean {
+  const all = collectCandidates();
+  return all.some((c) => urlStr.startsWith(c + '/') || urlStr === c);
+}
 
-  (window as any).__eaqariFetchPatchedV2 = true;
+// ------- Global fetch patch -------
+if (typeof window !== 'undefined' && !(window as any).__eaqariFetchPatchedV3) {
+  const originalFetch = window.fetch.bind(window);
+  (window as any).__eaqariFetchPatchedV3 = true;
 
   window.fetch = async function (input: RequestInfo | URL, init?: RequestInit) {
     const reqInit: RequestInit = init || {};
     reqInit.headers = {
       'ngrok-skip-browser-warning': 'true',
       'Bypass-Tunnel-Reminder': 'true',
+      'loca-skip-warning': 'true',
       Accept: 'application/json, text/plain, */*',
       ...(reqInit.headers as any),
     } as any;
@@ -125,31 +171,29 @@ if (typeof window !== 'undefined' && !(window as any).__eaqariFetchPatchedV2) {
         ? input.toString()
         : (input as Request).url;
 
-    // إذا كان الطلب إلى أحد الروابط المعروفة ولم نعرف الرابط الصحيح بعد
-    const urlMatchesKnown = CANDIDATES.some(
-      (c) => url.startsWith(c + '/') || url === c
-    );
+    const matchesKnown = isOurServer(url);
 
-    if (urlMatchesKnown) {
-      // أول طلب فقط: إجراء فحص سريع قبل إرسال الطلب
-      if (!cachedBase) {
-        try {
-          await resolveBase();
-        } catch {
-          /* ignore */
-        }
+    // أول طلب: نتأكد من وجود رابط صالح قبل الإرسال
+    if (matchesKnown && !cachedBase) {
+      try {
+        await resolveBase();
+      } catch {
+        /* ignore */
       }
-      if (cachedBase) {
-        url = replaceBase(url, cachedBase);
-      }
+    }
+    if (matchesKnown && cachedBase) {
+      url = replaceBase(url, cachedBase);
     }
 
     // إرسال الطلب الأول
     let lastErr: any = null;
     try {
       const r = await originalFetch(url, reqInit);
-      // إذا كان الخطأ 404 أو 502 وما شابه والطلب متجه لرابط معروف، نحاول الروابط الأخرى
-      if ((r.status === 404 || r.status === 502 || r.status === 503) && urlMatchesKnown) {
+      if (
+        matchesKnown &&
+        (r.status === 404 || r.status === 502 || r.status === 503)
+      ) {
+        // الرابط الحالي ميت -> نحاول باقي الروابط المحلية/النفقية فقط
         throw new Error('bad_status:' + r.status);
       }
       return r;
@@ -157,24 +201,22 @@ if (typeof window !== 'undefined' && !(window as any).__eaqariFetchPatchedV2) {
       lastErr = e;
     }
 
-    // Fallback: جرب الروابط الأخرى واحدة تلو الأخرى
-    if (urlMatchesKnown) {
-      const alreadyTried = cachedBase ? [cachedBase] : [];
-      const remaining = CANDIDATES.filter((c) => !alreadyTried.includes(c));
+    // Fallback: جرب الروابط المتبقية
+    if (matchesKnown) {
+      const tried = cachedBase ? [cachedBase] : [];
+      const remaining = collectCandidates().filter((c) => !tried.includes(c));
       for (const alt of remaining) {
         try {
           const altUrl = replaceBase(url, alt);
           if (typeof console !== 'undefined') {
-            console.warn('[api.ts] 🔄 Retrying with fallback base:', alt);
+            console.warn('[api.ts] 🔄 Fallback retry with:', alt);
           }
           const r = await originalFetch(altUrl, reqInit);
-          if (r.ok || (r.status !== 404 && r.status !== 502 && r.status !== 503)) {
+          // لا نعتبر 404/502 نجاحاً هنا أيضاً
+          if (r.status !== 404 && r.status !== 502 && r.status !== 503) {
             cachedBase = alt;
-            try {
-              window.localStorage.setItem(LS_KEY, alt);
-            } catch {
-              /* ignore */
-            }
+            safeSet(LEGACY_KEY, alt);
+            if (/\.trycloudflare\.com/i.test(alt)) safeSet(CLOUDFLARE_KEY, alt);
             return r;
           }
         } catch (err) {
@@ -189,22 +231,22 @@ if (typeof window !== 'undefined' && !(window as any).__eaqariFetchPatchedV2) {
   };
 }
 
-// واجهات المستخدم
+// ------- واجهات برمجية -------
 export function getCurrentApiBase(): string {
-  return cachedBase || CANDIDATES[0];
+  return cachedBase || PRODUCTION_FIXED_URLS[0];
 }
-
 export async function getApiBase(force = false): Promise<string> {
   return resolveBase(force);
 }
 
 // تصدير القيم الافتراضية (للتوافق مع الكود القديم)
-// ملاحظة: القيمة قد تتغير في وقت التشغيل عبر آلية fallback داخل الـ fetch المعدل أعلاه
-export const API_BASE: string = CANDIDATES[0];
-export const SERVER_URL: string = CANDIDATES[0];
-export const API_CANDIDATES: readonly string[] = CANDIDATES;
+// ملاحظة: القيمة الفعلية المستخدمة وقت التشغيل هي التي يتم اختيارها
+// عبر آلية resolveBase أعلاه ويتم تحديثها تلقائياً داخل fetch المعدل
+export const API_BASE: string = PRODUCTION_FIXED_URLS[0];
+export const SERVER_URL: string = PRODUCTION_FIXED_URLS[0];
+export const PRODUCTION_URLS: readonly string[] = PRODUCTION_FIXED_URLS;
 
-// تشغيل فحص أولي في الخلفية عند التحميل (للعميل فقط)
+// فحص أولي في الخلفية
 if (typeof window !== 'undefined') {
   resolveBase().catch(() => {});
 }
