@@ -14,30 +14,34 @@ const categories = [
   { name: 'شقق', icon: '🔑' },
   { name: 'منازل', icon: '🏠' },
   { name: 'فيلات', icon: '🏡' },
-  { name: 'شاليهات', icon: '🏖️' },
   { name: 'محلات', icon: '🛒' },
   { name: 'أراضي', icon: '🌿' },
-  { name: 'مولات', icon: '🏬' },
   { name: 'مكاتب', icon: '💼' },
 ];
 
 export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState('الكل');
-  const [selectedCity, setSelectedCity] = useState('الكل');
   const [user, setUser] = useState<UserSession | null>(null);
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState<number[]>([]);
+  const [showAnnouncement, setShowAnnouncement] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
 
   useEffect(() => {
     const { user: currentSession } = getSession();
     setUser(currentSession);
     setFavorites(JSON.parse(localStorage.getItem('eaqari_favorites') || '[]'));
+    // Show announcement unless user permanently dismissed it
+    const dismissed = localStorage.getItem('eaqari_announcement_dismissed');
+    if (!dismissed) setShowAnnouncement(true);
 
     // Fetch properties
     const fetchProperties = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/properties`);
+        const res = await fetch(`${API_BASE}/api/properties`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        });
         if (res.ok) {
           const data = await res.json();
           // Transform backend data to match frontend structure
@@ -70,8 +74,69 @@ export default function Home() {
   let bannerBtnText = 'أضف إعلانك مجاناً';
   let bannerBtnPath = user ? '/add-property' : '/login';
 
+  const handleCloseAnnouncement = () => {
+    if (dontShowAgain) {
+      localStorage.setItem('eaqari_announcement_dismissed', 'true');
+    }
+    setShowAnnouncement(false);
+  };
+
   return (
     <div className="space-y-6">
+
+      {/* ====== ANNOUNCEMENT POPUP ====== */}
+      {showAnnouncement && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir="rtl">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-[#c9a84c] to-[#b3933e] px-5 py-4 text-white">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🏠</span>
+                <div>
+                  <h2 className="font-black text-base leading-tight">رسالة من فريق عقاري</h2>
+                  <p className="text-[10px] text-yellow-100 font-bold">مهمة جداً — يرجى القراءة</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-4 text-right overflow-y-auto max-h-[55vh] text-sm text-gray-700 leading-relaxed space-y-3">
+              <p className="font-black text-gray-900 text-sm">لاحظنا أن الاستغلال من السماسرة بياخد شهر أو نص شهر عمولة، والي عاوز 2.5% عمولة — إلا من رحم ربي — بيستغلوا الناس أكبر استغلال.</p>
+              <p>دا يمنعش إنك تشتغل، وفي النهاية رغبة البائع أو المؤجر أو المشتري أو المستأجر ليهم كامل الحرية في التعامل مع أي حد.</p>
+              <p>قولنا لازم نعمل فكرة نوصل البائع بالمشتري أو المؤجر بالمستأجر <strong>دون أي جنيه سمسرة.</strong></p>
+              <p>بس الفكرة إننا هيبقا على كل بيع أو إيجار مبلغ رمزي جداً يُدفع للتطبيق لأن رفع التطبيق والتطوير والسيرفر محتاج ميزانية، <strong>وده في حالة إذا تم البيع أو التأجير فعلاً مش قبل ما يتم.</strong></p>
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 space-y-1">
+                <p className="font-black text-amber-800 text-xs">💰 المبالغ الرمزية لدعم التطبيق:</p>
+                <p className="text-xs text-amber-900">🏷️ <strong>البيع:</strong> 500 جنيه من البائع + 500 من المشتري</p>
+                <p className="text-xs text-amber-900">🏷️ <strong>الإيجار:</strong> 300 جنيه من المؤجر + 300 من المستأجر</p>
+              </div>
+              <p className="text-xs text-gray-500">وأنا أظن أن المبالغ المذكورة لا شيء جنب اللي حضرتك بتدفعه.</p>
+              <p>وطبعاً إنت وضميرك في إرسال المبلغ لدعم التطبيق عشان نقدر نكمل ويفضل مستمر ويحقق أكبر استفادة.</p>
+              <p className="text-xs text-gray-500">📌 مراقبة التطبيق مستمرة — أي سمسار أو صاحب عقار تُلاحَظ عليه أسعار مبالغ فيها أو جاءت شكاوى من المستخدمين <strong>هيتم حذفه نهائياً.</strong></p>
+              <p className="font-black text-gray-900">احنا في النهاية فكرتنا إننا نبقوا عيلة واحدة ونقف أمام الجشع. 🤝</p>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-gray-100 px-5 py-4 space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={dontShowAgain}
+                  onChange={e => setDontShowAgain(e.target.checked)}
+                  className="w-4 h-4 rounded accent-[#c9a84c] cursor-pointer"
+                />
+                <span className="text-xs font-bold text-gray-600">لا تُظهر لي هذه الرسالة مرة أخرى</span>
+              </label>
+              <button
+                onClick={handleCloseAnnouncement}
+                className="w-full py-2.5 bg-gradient-to-r from-[#c9a84c] to-[#b3933e] text-white font-black text-sm rounded-xl shadow-md active:scale-95 transition-all"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Search Bar */}
       <div className="relative flex gap-2">
         <div className="relative flex-1">
@@ -97,23 +162,6 @@ export default function Home() {
           </Link>
         </div>
         <div className="absolute left-[-20px] bottom-[-20px] text-8xl opacity-15 rotate-12">🏠</div>
-      </div>
-
-      {/* Location Filter */}
-      <div className="space-y-3">
-        <h3 className="text-base font-bold text-gray-800">المدينة / المركز</h3>
-        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-          {['الكل', ...ALL_CENTERS_NAMES].map(city => (
-            <button key={city} onClick={() => setSelectedCity(city)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap shadow-sm border transition-all ${
-                selectedCity === city
-                  ? 'bg-blue-600 text-white border-transparent'
-                  : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'
-              }`}>
-              {city}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Categories */}
@@ -148,10 +196,8 @@ export default function Home() {
               case 'شقق': return 'شقة';
               case 'منازل': return 'منزل';
               case 'فيلات': return 'فيلا';
-              case 'شاليهات': return 'شاليه';
               case 'محلات': return 'محل';
               case 'أراضي': return 'أرض';
-              case 'مولات': return 'مول';
               case 'مكاتب': return 'مكتب';
               default: return cat;
             }
@@ -159,8 +205,7 @@ export default function Home() {
 
           const filteredProperties = properties.filter(prop => {
             const matchCategory = selectedCategory === 'الكل' || prop.type === getMappedCategory(selectedCategory);
-            const matchCity = selectedCity === 'الكل' || prop.city === selectedCity;
-            return matchCategory && matchCity;
+            return matchCategory;
           });
 
           if (loading) {
@@ -229,9 +274,8 @@ export default function Home() {
         })()}
       </div>
 
-      {/* App Version */}
-      <div className="text-center pb-6">
-        <span className="text-xs font-bold text-gray-400">Eaqari v2</span>
+      {/* App Version hidden here */}
+      <div className="pb-6">
       </div>
     </div>
   );

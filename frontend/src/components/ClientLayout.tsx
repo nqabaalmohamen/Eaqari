@@ -1,12 +1,12 @@
 'use client';
 
-'use client';
-
 import { useState, useEffect, useMemo, ReactNode } from 'react';
 import SplashScreen from './SplashScreen';
 import AppHeader from './AppHeader';
 import BottomNav from './BottomNav';
+import FloatingAdminChatButton from './FloatingAdminChatButton';
 import { usePathname, useRouter } from 'next/navigation';
+import { App as CapacitorApp } from '@capacitor/app';
 
 // ─────────────────────────────────────────────────────────────
 // Google Safe Wrapper — declared OUTSIDE ClientLayout to avoid
@@ -85,7 +85,7 @@ function safeSSGet(key: string): string | null {
 }
 
 // Auth-free routes (no token/guest needed)
-const AUTH_FREE = ['/login', '/register', '/complete-profile'];
+const AUTH_FREE = ['/login', '/register', '/complete-profile', '/forgot-password'];
 
 function isAuthFree(path: string): boolean {
   return AUTH_FREE.includes(path);
@@ -140,18 +140,64 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
 
   // ─── Effects ───
   useEffect(() => {
+    if (typeof window !== 'undefined' && !(window as any).__fetchPatched) {
+      const originalFetch = window.fetch;
+      window.fetch = async function (input: RequestInfo | URL, init?: RequestInit) {
+        const newInit = init || {};
+        newInit.headers = {
+          ...newInit.headers,
+          'Bypass-Tunnel-Reminder': 'true',
+          'ngrok-skip-browser-warning': 'true'
+        };
+        return originalFetch(input, newInit);
+      };
+      (window as any).__fetchPatched = true;
+    }
     // Mark mounted after first client-side paint
     // NOTE: This warning exists in ESLint because setState directly in effect can
     // cascade, but for hydration guards it's the correct pattern — setTimeout defers it.
     const id = setTimeout(() => setMounted(true), 0);
-    return () => clearTimeout(id);
+
+    // Setup Android Back Button handling
+    let listener: any = null;
+    let lastBackPressed = 0;
+    try {
+      CapacitorApp.addListener('backButton', async ({ canGoBack }) => {
+        const now = Date.now();
+        if (!canGoBack || window.location.pathname === '/' || window.location.pathname === '/login') {
+          if (now - lastBackPressed < 2000) {
+            CapacitorApp.exitApp();
+          } else {
+            lastBackPressed = now;
+            try {
+              const { Toast } = await import('@capacitor/toast');
+              await Toast.show({
+                text: 'اضغط رجوع مرة اخري للخروج من التطبيق',
+                duration: 'short'
+              });
+            } catch (e) {
+              console.warn('[ClientLayout] Toast failed', e);
+            }
+          }
+        } else {
+          window.history.back();
+        }
+      }).then(l => listener = l);
+    } catch (e) {
+      console.warn('[ClientLayout] Capacitor App plugin failed to attach backButton listener', e);
+    }
+
+    return () => {
+      clearTimeout(id);
+      if (listener && typeof listener.remove === 'function') listener.remove();
+    };
   }, []);
 
   useEffect(() => {
     if (!mounted) return;
-    // Show splash only once per JS lifecycle (clears on real app restart)
+    // Show splash only once per app session - use sessionStorage for persistence across navigations
     try {
-      const hasShownSplash = typeof window !== 'undefined' && (window as any).__hasShownSplash === true;
+      const hasShownSplash = safeSSGet('eaqari_splash_shown') === 'true';
       if (hasShownSplash) {
         setShowSplash(false);
       }
@@ -186,7 +232,9 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
   const handleSplashFinish = () => {
     setShowSplash(false);
     try {
+      // Use sessionStorage so splash doesn't repeat on navigation within same app session
       if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem('eaqari_splash_shown', 'true');
         (window as any).__hasShownSplash = true;
       }
     } catch { /* ignore */ }
@@ -212,10 +260,19 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
     <GoogleSafeWrapper clientId={googleClientId}>
       <div className="flex flex-col min-h-screen" style={{ paddingBottom: hideChrome ? 0 : 72 }}>
         {!hideChrome && <AppHeader />}
-        <main className="flex-1 w-full max-w-md mx-auto px-4 py-4">
-          {children}
-        </main>
+        {hideChrome ? (
+          <>{children}</>
+        ) : (
+          <main className="flex-1 w-full max-w-md mx-auto px-4 py-4">
+            {children}
+          </main>
+        )}
         {!hideChrome && <BottomNav />}
+
+        {/* Floating Admin Chat Button - only for logged-in users */}
+        {!hideChrome && isAuth && (
+          <FloatingAdminChatButton />
+        )}
       </div>
     </GoogleSafeWrapper>
   );

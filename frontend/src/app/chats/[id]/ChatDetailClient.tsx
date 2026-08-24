@@ -1,7 +1,6 @@
 'use client';
 
 import { API_BASE } from '@/utils/api';
-'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -17,9 +16,9 @@ interface Message {
 
 interface Conversation {
   id: number;
-  buyer: { id: number; full_name: string };
-  owner: { id: number; full_name: string };
-  property: { id: number; city: string; type: string };
+  buyer: { id: number; full_name: string; phone?: string };
+  owner: { id: number; full_name: string; phone?: string };
+  property?: { id: number; city: string; type: string } | null;
 }
 
 export default function ChatDetailClient({ id }: { id: string }) {
@@ -31,24 +30,63 @@ export default function ChatDetailClient({ id }: { id: string }) {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
+  const [userName, setUserName] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportReason, setReportReason] = useState('');
   const [reportSending, setReportSending] = useState(false);
   const [reportSent, setReportSent] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const { user } = getSession();
     if (!user) { router.replace('/login'); return; }
     setUserId(user.id);
+    setUserName(user.full_name || 'أنا');
+    setIsAdmin(user.role === 'admin' || user.role === 'Admin' || user.role_id === 1);
     loadConversationAndMessages(user.id);
+
+    // Poll for new messages every 5 seconds
+    pollingRef.current = setInterval(() => {
+      fetchMessages();
+    }, 5000);
+
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const fetchMessages = async () => {
+    if (chatId.toString().startsWith('mock-')) return;
+    try {
+      const msgRes = await fetch(`${API_BASE}/api/chats/${chatId}/messages`, {
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      });
+      if (msgRes.ok) {
+        const msgData = await msgRes.json();
+        setMessages(msgData.messages || []);
+        
+        // Mark as read
+        const { user } = getSession();
+        if (user) {
+          fetch(`${API_BASE}/api/chats/${chatId}/read`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+            body: JSON.stringify({ user_id: user.id })
+          }).catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching messages', e);
+    }
+  };
 
   const loadConversationAndMessages = async (currentUserId: number) => {
     if (chatId.toString().startsWith('mock-')) {
@@ -67,16 +105,25 @@ export default function ChatDetailClient({ id }: { id: string }) {
     try {
       // Fetch conversation details + messages
       const [convRes, msgRes] = await Promise.all([
-        fetch(`${API_BASE}/api/chats/${chatId}`),
-        fetch(`${API_BASE}/api/chats/${chatId}/messages`)
+        fetch(`${API_BASE}/api/chats/${chatId}`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        }),
+        fetch(`${API_BASE}/api/chats/${chatId}/messages`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        })
       ]);
-      if (convRes.ok) {
+      if (convRes.ok && msgRes.ok) {
         const convData = await convRes.json();
-        setConversation(convData.conversation || convData);
-      }
-      if (msgRes.ok) {
         const msgData = await msgRes.json();
+        setConversation(convData.conversation);
         setMessages(msgData.messages || []);
+
+        // Mark as read
+        fetch(`${API_BASE}/api/chats/${chatId}/read`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+          body: JSON.stringify({ user_id: currentUserId })
+        }).catch(() => {});
       }
     } catch (e) {
       console.error('Error loading chat', e);
@@ -97,7 +144,7 @@ export default function ChatDetailClient({ id }: { id: string }) {
       sender_id: userId,
       content,
       created_at: new Date().toISOString(),
-      sender: { id: userId, full_name: 'أنا' }
+      sender: { id: userId, full_name: userName }
     };
     setMessages(prev => [...prev, tempMsg]);
 
@@ -108,7 +155,10 @@ export default function ChatDetailClient({ id }: { id: string }) {
     try {
       const res = await fetch(`${API_BASE}/api/chats/${chatId}/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify({ sender_id: userId, content })
       });
       const data = await res.json();
@@ -129,7 +179,10 @@ export default function ChatDetailClient({ id }: { id: string }) {
     try {
       await fetch(`${API_BASE}/api/chats/${chatId}/report`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify({ reporter_id: userId, reason: reportReason })
       });
       setReportSent(true);
@@ -145,9 +198,19 @@ export default function ChatDetailClient({ id }: { id: string }) {
     return conversation.buyer.full_name;
   };
 
+  const getOtherPersonPhone = () => {
+    if (!conversation) return '';
+    if (conversation.buyer.id === userId) return conversation.owner.phone;
+    return conversation.buyer.phone;
+  };
+
   const getPropertyInfo = () => {
     if (!conversation?.property) return '';
     return `${conversation.property.type} - ${conversation.property.city}`;
+  };
+
+  const getMessageSenderName = (msg: Message) => {
+    return msg.sender?.full_name || (msg.sender_id === userId ? userName : getOtherPersonName());
   };
 
   return (
@@ -166,6 +229,9 @@ export default function ChatDetailClient({ id }: { id: string }) {
           </div>
           <div className="min-w-0">
             <h2 className="font-bold text-gray-800 text-sm truncate">{getOtherPersonName()}</h2>
+            {isAdmin && getOtherPersonPhone() && (
+              <p className="text-[10px] text-blue-600 font-bold mb-0.5">📞 {getOtherPersonPhone()}</p>
+            )}
             <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               <span className="text-[10px] text-green-600 font-medium">متصل الآن</span>
@@ -187,7 +253,10 @@ export default function ChatDetailClient({ id }: { id: string }) {
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
         {loading ? (
           <div className="flex justify-center py-20">
-            <div className="text-gray-400 text-sm animate-pulse">جاري التحميل...</div>
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" style={{ borderWidth: '3px' }} />
+              <span className="text-gray-400 text-sm">جاري تحميل الرسائل...</span>
+            </div>
           </div>
         ) : messages.length === 0 ? (
           <div className="text-center py-20 text-gray-400 text-sm">
@@ -198,7 +267,11 @@ export default function ChatDetailClient({ id }: { id: string }) {
           messages.map((msg) => {
             const isMine = msg.sender_id === userId;
             return (
-              <div key={msg.id} className={`flex ${isMine ? 'justify-start' : 'justify-end'}`}>
+              <div key={msg.id} className={`flex flex-col ${isMine ? 'items-start' : 'items-end'}`}>
+                {/* Sender name */}
+                <span className="text-[10px] text-gray-400 font-medium mb-0.5 px-1">
+                  {getMessageSenderName(msg)}
+                </span>
                 <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${
                   isMine
                     ? 'bg-blue-600 text-white rounded-br-sm'
@@ -216,9 +289,8 @@ export default function ChatDetailClient({ id }: { id: string }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Message Input - Send button on LEFT (correct for RTL) */}
+      {/* Message Input */}
       <div className="flex items-center gap-2 p-4 bg-white border-t border-gray-100 fixed bottom-[70px] left-0 right-0 max-w-md mx-auto">
-        {/* Input on the right (RTL) */}
         <input
           type="text"
           placeholder="اكتب رسالة..."
@@ -227,7 +299,6 @@ export default function ChatDetailClient({ id }: { id: string }) {
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
           className="flex-1 border border-gray-200 rounded-full px-4 py-2.5 text-sm focus:outline-none focus:border-blue-400 text-right bg-gray-50"
         />
-        {/* Send button on LEFT */}
         <button
           onClick={sendMessage}
           disabled={sending || !newMessage.trim()}

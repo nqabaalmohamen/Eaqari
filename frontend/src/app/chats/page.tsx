@@ -1,8 +1,6 @@
 'use client';
 
 import { API_BASE } from '@/utils/api';
-'use client';
-
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/utils/auth';
@@ -11,7 +9,7 @@ interface Conversation {
   id: number;
   buyer: { id: number; full_name: string };
   owner: { id: number; full_name: string };
-  property: { id: number; city: string; type: string };
+  property?: { id: number; city: string; type: string } | null;
   messages: Array<{ content: string; created_at: string }>;
   created_at: string;
 }
@@ -34,7 +32,9 @@ export default function ChatsPage() {
 
   const loadConversations = async (uid: number) => {
     try {
-      const res = await fetch(`${API_BASE}/api/chats/user/${uid}`);
+      const res = await fetch(`${API_BASE}/api/chats/user/${uid}`, {
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      });
       const data = await res.json();
       setConversations(data.conversations || []);
     } catch (e) {
@@ -88,7 +88,7 @@ export default function ChatsPage() {
                     {lastMsg ? lastMsg.content : 'ابدأ المحادثة...'}
                   </p>
                   <span className="text-[10px] text-blue-500 font-medium mt-1 block">
-                    {conv.property.type} - {conv.property.city}
+                    {conv.property ? `${conv.property.type} - ${conv.property.city}` : '💬 محادثة الإدارة (دعم فني)'}
                   </span>
                 </div>
               </button>

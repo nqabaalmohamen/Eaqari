@@ -55,4 +55,21 @@ router.post('/admin/send', async (req: Request, res: Response): Promise<any> => 
   }
 });
 
+// Mark all notifications as read for a user
+router.put('/user/:userId/read-all', async (req: Request, res: Response): Promise<any> => {
+  try {
+    const userId = parseInt(req.params.userId as string);
+    if (isNaN(userId)) {
+      return res.status(400).json({ message: 'Invalid user ID' });
+    }
+    await prisma.notification.updateMany({
+      where: { user_id: userId, is_read: false },
+      data: { is_read: true }
+    });
+    res.json({ message: 'Notifications marked as read' });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 export default router;

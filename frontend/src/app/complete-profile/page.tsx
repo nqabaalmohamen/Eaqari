@@ -1,7 +1,6 @@
 'use client';
 
 import { API_BASE } from '@/utils/api';
-"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -131,7 +130,7 @@ export default function CompleteProfilePage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">المدينة أو المركز</label>
             <input
-              placeholder="مثال: يوسف الصديق"
+              placeholder="مثال: مدينة الفيوم"
               value={city}
               onChange={(e) => setCity(e.target.value)}
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-right focus:outline-none focus:border-blue-400"

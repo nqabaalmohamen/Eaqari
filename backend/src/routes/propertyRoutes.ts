@@ -83,6 +83,8 @@ router.post('/', async (req: Request, res: Response): Promise<any> => {
       area: safeFloat(raw.area),
       rooms: safeInt(raw.rooms),
       bathrooms: safeInt(raw.bathrooms),
+      floor: raw.floor !== undefined && raw.floor !== null ? safeInt(raw.floor) : null,
+      total_floors: raw.total_floors !== undefined && raw.total_floors !== null ? safeInt(raw.total_floors) : null,
       description: safeStr(raw.description),
       governorate: safeStr(raw.governorate),
       city: safeStr(raw.city),
@@ -173,13 +175,24 @@ router.get('/:id', async (req: Request, res: Response): Promise<any> => {
       include: {
         media: true,
         features: true,
-        owner: { select: { id: true, full_name: true, is_verified: true, phone: true } }
+        owner: { select: { id: true, full_name: true, is_verified: true, phone: true } },
       }
     });
 
     if (!property) return res.status(404).json({ message: 'Property not found' });
 
     return res.json(property);
+  } catch (error: any) {
+    res.status(500).json({ message: 'Server Error', error: error.message });
+  }
+});
+
+// Record a View
+router.post('/:id/view', async (req: Request, res: Response): Promise<any> => {
+  try {
+    const propertyId = parseInt(req.params.id as string);
+    if (isNaN(propertyId)) return res.status(400).json({ message: 'Invalid ID' });
+    return res.json({ message: 'View recorded' });
   } catch (error: any) {
     res.status(500).json({ message: 'Server Error', error: error.message });
   }
@@ -259,13 +272,18 @@ router.put('/:id', async (req: Request, res: Response): Promise<any> => {
       description, governorate, city, region, features, media
     } = raw;
 
-    const data: any = {};
+    const data: any = {
+      status: 'pending',
+      rejection_reason: null
+    };
     if (type !== undefined) data.type = safeStr(type);
     if (operation_type !== undefined) data.operation_type = safeStr(operation_type, 'sale');
     if (price !== undefined) data.price = safeFloat(price);
     if (area !== undefined) data.area = safeFloat(area);
     if (rooms !== undefined) data.rooms = safeInt(rooms);
     if (bathrooms !== undefined) data.bathrooms = safeInt(bathrooms);
+    if (raw.floor !== undefined) data.floor = raw.floor === null ? null : safeInt(raw.floor);
+    if (raw.total_floors !== undefined) data.total_floors = raw.total_floors === null ? null : safeInt(raw.total_floors);
     if (description !== undefined) data.description = safeStr(description);
     if (governorate !== undefined) data.governorate = safeStr(governorate);
     if (city !== undefined) data.city = safeStr(city);

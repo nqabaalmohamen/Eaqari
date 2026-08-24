@@ -15,6 +15,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@getbrevo/brevo": "^6.0.3",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "@types/nodemailer": "^8.0.1",
@@ -29,6 +30,7 @@
     "pg": "^8.23.0",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
+    "resend": "^6.22.0",
     "whatsapp-web.js": "^1.34.7"
   },
   "devDependencies": {

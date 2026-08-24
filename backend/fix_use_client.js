@@ -27,9 +27,10 @@ function fixFile(filePath) {
 
   if (matches.length > 1) {
     // إزالة كل أسطر 'use client'
-    content = content.replace(/^['"]use client['"];\n/gm, '');
+    content = content.replace(/^['"]use client['"];\r?\n/gm, '');
+    content = content.replace(/^['"]use client['"]\r?\n/gm, ''); // without semicolon
     // إزالة الأسطر الفارغة الزائدة في البداية
-    content = content.replace(/^\n+/, '');
+    content = content.replace(/^\s+/, '');
     // إضافة واحد فقط في السطر الأول
     content = "'use client';\n\n" + content;
     fs.writeFileSync(filePath, content, 'utf8');

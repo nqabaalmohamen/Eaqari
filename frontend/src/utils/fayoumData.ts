@@ -113,23 +113,6 @@ export const FAYOUM_CENTERS: FayoumCenter[] = [
     ]
   },
   {
-    name: 'Youssef El Seddik',
-    nameAr: 'يوسف الصديق',
-    type: 'مركز',
-    districts: [
-      'مدينة يوسف الصديق',
-      'عزبة النخل',
-      'الحريزات',
-      'كفر شبل',
-      'بني حمدان',
-      'المسليمة',
-      'الغنامية',
-      'أبو عصبة',
-      'الزرقا',
-      'المؤتية'
-    ]
-  },
-  {
     name: 'New Fayoum',
     nameAr: 'الفيوم الجديدة',
     type: 'مدينة',
@@ -152,11 +135,9 @@ export const PROPERTY_TYPES: { name: string; icon: string }[] = [
   { name: 'شقة', icon: '🔑' },
   { name: 'منزل', icon: '🏠' },
   { name: 'فيلا', icon: '🏡' },
-  { name: 'شاليه', icon: '🏖️' },
-  { name: 'محل', icon: '🛒' },
-  { name: 'أرض', icon: '🌿' },
-  { name: 'مول', icon: '🏬' },
-  { name: 'مكتب', icon: '💼' }
+  { name: 'محل', icon: '🏪' },
+  { name: 'أرض', icon: '⛰️' },
+  { name: 'مكتب', icon: '🏢' },
 ];
 
 export const ROOMS_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8];

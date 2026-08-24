@@ -1,8 +1,6 @@
 'use client';
 
 import { API_BASE } from '@/utils/api';
-'use client';
-
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/utils/auth';
@@ -23,9 +21,18 @@ export default function NotificationsPage() {
 
   const fetchNotifications = async (userId: number) => {
     try {
-      const res = await fetch(`${API_BASE}/api/notifications/user/${userId}`);
+      const res = await fetch(`${API_BASE}/api/notifications/user/${userId}`, {
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      });
       const data = await res.json();
       setNotifications(data.notifications || []);
+      
+      // Mark as read
+      fetch(`${API_BASE}/api/notifications/user/${userId}/read-all`, {
+        method: 'PUT',
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      }).catch(console.error);
+
     } catch (e) {
       console.error(e);
     } finally {
@@ -36,7 +43,7 @@ export default function NotificationsPage() {
   return (
     <div className="space-y-4 pb-20" dir="rtl">
       <h1 className="text-xl font-bold text-gray-900 mb-2">الإشعارات 🔔</h1>
-      
+
       {loading ? (
         <div className="text-center py-10 text-gray-400">جاري التحميل...</div>
       ) : notifications.length === 0 ? (

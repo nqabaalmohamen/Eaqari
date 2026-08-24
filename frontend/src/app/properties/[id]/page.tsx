@@ -10,6 +10,7 @@ export function generateStaticParams() {
   ];
 }
 
-export default function PropertyDetailsPage({ params }: { params: { id: string } }) {
-  return <PropertyDetailsClient id={params.id} />;
+export default async function PropertyDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return <PropertyDetailsClient id={id} />;
 }

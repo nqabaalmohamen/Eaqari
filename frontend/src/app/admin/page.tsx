@@ -14,6 +14,7 @@ type Tab =
   | 'reports'
   | 'verifications'
   | 'conversations'
+  | 'password_requests'
   | 'settings';
 
 // ─── SAFETY HELPERS ────────────────────────────────────────────
@@ -82,6 +83,7 @@ export default function AdminDashboard() {
   const [reports, setReports] = useState<any[]>([]);
   const [verifications, setVerifications] = useState<any[]>([]);
   const [conversations, setConversations] = useState<any[]>([]);
+  const [passwordRequests, setPasswordRequests] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
 
   // Bulk selection states
@@ -147,10 +149,11 @@ export default function AdminDashboard() {
         safeFetch(`${API_BASE}/api/admin/reports`),
         safeFetch(`${API_BASE}/api/admin/verifications`),
         safeFetch(`${API_BASE}/api/admin/conversations`),
+        safeFetch(`${API_BASE}/api/admin/password-requests`),
         safeFetch(`${API_BASE}/api/admin/stats`),
       ]);
 
-      const [usersRes, propsRes, reportsRes, verifRes, convsRes, statsRes] = results;
+      const [usersRes, propsRes, reportsRes, verifRes, convsRes, passReqsRes, statsRes] = results;
 
       const parseJSON = async (r: any, fallback: any = [], expectArray = true) => {
         try {
@@ -203,6 +206,7 @@ export default function AdminDashboard() {
       const parsedReports = await parseJSON(reportsRes, [], true);
       const parsedVerifs = await parseJSON(verifRes, [], true);
       const parsedConvs = await parseJSON(convsRes, [], true);
+      const parsedPassReqs = await parseJSON(passReqsRes, [], true);
       const parsedStats = await parseJSON(statsRes, null, false);
 
       setUsers(Array.isArray(parsedUsers) ? parsedUsers : []);
@@ -210,6 +214,7 @@ export default function AdminDashboard() {
       setReports(Array.isArray(parsedReports) ? parsedReports : []);
       setVerifications(Array.isArray(parsedVerifs) ? parsedVerifs : []);
       setConversations(Array.isArray(parsedConvs) ? parsedConvs : []);
+      setPasswordRequests(Array.isArray(parsedPassReqs) ? parsedPassReqs : []);
       setStats(parsedStats && typeof parsedStats === 'object' ? parsedStats : null);
     } catch (error: any) {
       console.error('Error fetching admin data:', error);
@@ -218,6 +223,7 @@ export default function AdminDashboard() {
       setReports([]);
       setVerifications([]);
       setConversations([]);
+      setPasswordRequests([]);
       setStats(null);
       showMsg('error', 'تعذر تحميل البيانات. يرجى تحديث الصفحة.');
     } finally {
@@ -646,6 +652,7 @@ export default function AdminDashboard() {
   // ─── TABS CONFIG ───────────────────────────────────────────────
   const pendingReportsCount = safeReports.filter(r => r?.status === 'pending').length;
   const pendingVerificationsCount = safeVerifications.filter(v => v?.status === 'pending').length;
+  const pendingPassReqsCount = ensureArray(passwordRequests).filter(r => r?.status === 'pending').length;
   const tabs: { id: Tab; label: string; icon: string; badge?: number }[] = useMemo(() => [
     { id: 'overview', label: 'نظرة عامة', icon: '📊' },
     { id: 'users', label: 'المستخدمين', icon: '👥', badge: safeUsers.length },
@@ -653,8 +660,9 @@ export default function AdminDashboard() {
     { id: 'reports', label: 'البلاغات', icon: '🚩', badge: pendingReportsCount > 0 ? pendingReportsCount : undefined },
     { id: 'verifications', label: 'التحقق', icon: '✅', badge: pendingVerificationsCount > 0 ? pendingVerificationsCount : undefined },
     { id: 'conversations', label: 'المحادثات', icon: '💬', badge: safeConversations.length },
+    { id: 'password_requests', label: 'طلبات الدعم', icon: '🔑', badge: pendingPassReqsCount > 0 ? pendingPassReqsCount : undefined },
     { id: 'settings', label: 'الإعدادات', icon: '⚙️' },
-  ], [safeUsers.length, safeProperties.length, pendingReportsCount, pendingVerificationsCount, safeConversations.length]);
+  ], [safeUsers.length, safeProperties.length, pendingReportsCount, pendingVerificationsCount, safeConversations.length, pendingPassReqsCount]);
 
   const formatDate = (d: any) => {
     try {
@@ -1391,6 +1399,84 @@ export default function AdminDashboard() {
                 </div>
               ))
             )}
+          </div>
+        )}
+
+        {/* ─── PASSWORD REQUESTS TAB ─── */}
+        {activeTab === 'password_requests' && (
+          <div className="space-y-6">
+            <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+              <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">🔑 طلبات استعادة كلمة المرور</h2>
+              <p className="text-xs text-gray-500 mt-1">المستخدمون الذين طلبوا استعادة كلمة المرور عبر الإدارة. يرجى التواصل معهم عبر الواتساب وتحديد الطلب كـ "تم الحل" بعد التواصل.</p>
+            </div>
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm" dir="rtl">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="p-4 font-bold text-gray-700 text-right">رقم الهاتف</th>
+                      <th className="p-4 font-bold text-gray-700 text-right">تاريخ الطلب</th>
+                      <th className="p-4 font-bold text-gray-700 text-right">الحالة</th>
+                      <th className="p-4 font-bold text-gray-700 text-right">إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ensureArray(passwordRequests).length > 0 ? (
+                      ensureArray(passwordRequests).map((req: any) => (
+                        <tr key={req.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                          <td className="p-4 font-mono font-bold text-gray-900" dir="ltr">{safeStr(req.phone, '—')}</td>
+                          <td className="p-4 text-gray-500 text-xs">{formatDate(req.created_at)}</td>
+                          <td className="p-4">
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${req.status === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                              {req.status === 'resolved' ? '✅ تم الحل' : '⏳ قيد الانتظار'}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            {req.status === 'pending' ? (
+                              <button
+                                onClick={async () => {
+                                  if (confirm('هل تم التواصل مع المستخدم وإرسال كلمة المرور عبر الواتساب؟')) {
+                                    setActionLoading(`passreq-${req.id}`);
+                                    try {
+                                      const res = await fetch(`${API_BASE}/api/admin/password-requests/${req.id}/resolve`, {
+                                        method: 'PUT',
+                                        headers: { 'Authorization': `Bearer ${localStorage.getItem('eaqari_token')}`, 'ngrok-skip-browser-warning': 'true' }
+                                      });
+                                      if (res.ok) {
+                                        showMsg('success', 'تم تحديد الطلب كمحلول');
+                                        setPasswordRequests((prev: any[]) => prev.map((r: any) => r.id === req.id ? { ...r, status: 'resolved' } : r));
+                                      } else {
+                                        showMsg('error', 'فشل في تحديث الطلب');
+                                      }
+                                    } catch {
+                                      showMsg('error', 'خطأ في الشبكة');
+                                    }
+                                    setActionLoading(null);
+                                  }
+                                }}
+                                disabled={actionLoading === `passreq-${req.id}`}
+                                className="px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 rounded-xl text-xs font-bold transition-colors disabled:opacity-50"
+                              >
+                                {actionLoading === `passreq-${req.id}` ? '...' : 'تحديد كتم الحل'}
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-400">تم المعالجة</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="p-10 text-center text-gray-400">
+                          <div className="text-4xl mb-2">🔑</div>
+                          <p className="font-bold text-sm">لا توجد طلبات استعادة كلمة مرور بعد.</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 

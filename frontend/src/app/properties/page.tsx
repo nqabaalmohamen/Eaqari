@@ -1,7 +1,6 @@
 'use client';
 
 import { API_BASE } from '@/utils/api';
-'use client';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -151,10 +150,8 @@ export default function Properties() {
               <option value="شقة">شقة</option>
               <option value="منزل">منزل</option>
               <option value="فيلا">فيلا</option>
-              <option value="شاليه">شاليه</option>
               <option value="محل">محل</option>
               <option value="أرض">أرض</option>
-              <option value="مول">مول</option>
               <option value="مكتب">مكتب</option>
             </select>
           </div>

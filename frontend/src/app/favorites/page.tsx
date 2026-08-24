@@ -1,8 +1,6 @@
 'use client';
 
 import { API_BASE } from '@/utils/api';
-'use client';
-
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -41,7 +39,9 @@ export default function Favorites() {
 
     const fetchFavorites = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/properties`);
+        const res = await fetch(`${API_BASE}/api/properties`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' }
+        });
         if (res.ok) {
           const allProps = await res.json();
           const favPropsData: FavProperty[] = allProps
@@ -154,10 +154,7 @@ export default function Favorites() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs text-gray-400 font-medium">{properties.length} عقار محفوظ</p>
-              <Link
-                href="/properties"
-                className="text-xs font-bold text-blue-600"
-              >
+              <Link href="/" className="text-xs font-bold text-blue-600">
                 استكشف المزيد
               </Link>
             </div>
@@ -166,11 +163,7 @@ export default function Favorites() {
                 key={prop.id}
                 className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex gap-3 p-3 hover:shadow-md transition-shadow"
               >
-                <Link
-                  href={`/properties/${prop.id}`}
-                  className="shrink-0"
-                  prefetch={false}
-                >
+                <Link href={`/properties/${prop.id}`} className="shrink-0" prefetch={false}>
                   <img
                     src={prop.image}
                     alt={prop.title}
