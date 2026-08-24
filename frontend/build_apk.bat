@@ -25,9 +25,18 @@ set cur_time=%cur_time: =0%
 set cur_time=%cur_time:~0,8%
 set apk_name=Eaqari_Update_%cur_date%_%cur_time%.apk
 
-copy "android\app\build\outputs\apk\debug\Eaqari-v1.3.apk" "..\%apk_name%"
+rem Copy the latest generated APK (auto-named by build.gradle as Eaqari-v{versionName}.apk)
+for %%f in ("android\app\build\outputs\apk\debug\Eaqari-v*.apk") do (
+    copy "%%f" "..\%apk_name%" >nul
+    set source_apk=%%~nxf
+)
 echo.
 echo ========================================================
-echo Copied APK to root directory as: %apk_name%
-echo Location: D:\Eaqari\%apk_name%
+if defined source_apk (
+    echo Source APK: %source_apk%
+    echo Copied APK to root directory as: %apk_name%
+    echo Location: D:\Eaqari\%apk_name%
+) else (
+    echo WARNING: Could not find generated APK in android\app\build\outputs\apk\debug\
+)
 echo ========================================================
