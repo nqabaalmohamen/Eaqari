@@ -31,22 +31,40 @@ async function findAdminUser(): Promise<any> {
 
   if (!adminRoleId) {
     try {
-      const r3 = await prisma.role.findFirst({ orderBy: { id: 'asc' } });
-      if (r3) adminRoleId = r3.id;
+      const r3: any[] = await prisma.$queryRawUnsafe(
+        "SELECT id, name FROM \"Role\" WHERE LOWER(name) LIKE LOWER('%admin%') ORDER BY id ASC LIMIT 1"
+      ) as any;
+      if (r3 && r3.length > 0) {
+        adminRoleId = r3[0].id;
+        console.log('[findAdmin] ✅ Found admin-like role via LIKE:', r3[0].name, '→ id', adminRoleId);
+      }
+    } catch (e: any) {
+      console.warn('[findAdmin] LIKE admin role lookup failed:', e?.message);
+    }
+  }
+
+  if (!adminRoleId) {
+    try {
+      const allRoles = await prisma.role.findMany({ orderBy: { id: 'asc' } });
+      const likeMatch = (allRoles || []).find(r =>
+        typeof r.name === 'string' && r.name.toLowerCase().includes('admin')
+      );
+      if (likeMatch) adminRoleId = likeMatch.id;
+      else if (allRoles && allRoles.length > 0) adminRoleId = allRoles[allRoles.length - 1].id;
     } catch { /* ignore */ }
   }
 
-  const fallbackIds = adminRoleId ? [adminRoleId] : [1, 2, 3];
+  const fallbackIds = adminRoleId ? [adminRoleId] : [2, 3, 1];
 
   for (const rid of fallbackIds) {
     try {
       const u = await prisma.user.findFirst({
         where: { role_id: rid },
         orderBy: { id: 'asc' },
-        select: { id: true, full_name: true, phone: true, role_id: true },
+        select: { id: true, full_name: true, phone: true, email: true, role_id: true },
       });
       if (u) {
-        console.log('[findAdmin] ✅ Found admin user via role_id:', rid, 'user:', { id: u.id, name: u.full_name });
+        console.log('[findAdmin] ✅ Found admin user via role_id:', rid, 'user:', { id: u.id, name: u.full_name, email: u.email });
         return u;
       }
     } catch (e: any) {
@@ -56,10 +74,14 @@ async function findAdminUser(): Promise<any> {
 
   try {
     const rawUsers: any[] = await prisma.$queryRawUnsafe(
-      'SELECT u.id, u.full_name, u.phone, u.role_id FROM "User" u ORDER BY u.id ASC LIMIT 5'
+      'SELECT u.id, u.full_name, u.phone, u.email, u.role_id FROM "User" u ORDER BY u.id ASC'
     ) as any;
     if (rawUsers && rawUsers.length > 0) {
-      let candidate: any = rawUsers.find((u: any) => u.role_id === adminRoleId);
+      let candidate: any = rawUsers.find((u: any) =>
+        (u.email && u.email.toLowerCase().includes('admin')) ||
+        u.role_id === adminRoleId
+      );
+      if (!candidate) candidate = rawUsers[rawUsers.length - 1];
       if (!candidate) candidate = rawUsers[0];
       console.log('[findAdmin] ✅ Raw fallback admin user:', candidate);
       return candidate;
